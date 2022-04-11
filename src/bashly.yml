@@ -1,0 +1,41 @@
+name: dotm
+help: Personal dotfiles manager utility
+version: 0.1.3
+
+environment_variables:
+- name: DOTFILES
+  required: true
+  default: $HOME/.dotfiles/
+  help: Path to the local dotfiles repository
+
+commands:
+- name: add
+  short: a
+  help: Add new files/directories to the dotfiles
+
+  dependencies:
+    - openssl
+    - tar
+
+  args:
+    - name: FILE
+      required: true
+      repeatable: true
+      validate: file_or_dir_exists
+      help: Files/Directories to import into the dotfiles repo
+
+  flags:
+    - long: --package
+      short: -p
+      arg: PACKAGE
+      default: host/$HOSTNAME
+      help: Set the package to contain the new files
+    - long: --encrypted
+      short: -e
+      help: Encrypt the file/directories in the dotfiles
+    - long: --copy
+      short: -c
+      help: Copy the dotfiles instead of using links
+    - long: --force
+      short: -f
+      help: Force overwriting duplicate dotfiles
