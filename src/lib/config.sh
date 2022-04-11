@@ -6,7 +6,14 @@ CONFIG_FILE=""
 ## Usage: config_init myfile.ini
 config_init() {
   CONFIG_FILE="$1"
-  [[ -f "$CONFIG_FILE" ]] || touch "$CONFIG_FILE"
+  if ! [[ -f "$CONFIG_FILE" ]]; then
+    if ! [[ -d "$(dirname "$CONFIG_FILE")" ]]; then
+      linfo "Creating new local dotfiles repo $(lscolor "$(dirname "$CONFIG_FILE")")"
+      mkdir -p "$(dirname "$CONFIG_FILE")"
+    fi
+    linfo "Creating new empty config file $(lscolor "$CONFIG_FILE")"
+    touch "$CONFIG_FILE"
+  fi
 }
 
 CONFIG_SECTION_KEY=""

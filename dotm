@@ -53,7 +53,7 @@ dotm_usage() {
     # :environment_variable.usage
     echo "  DOTFILES (required)"
     printf "    Path to the local dotfiles repository\n"
-    printf "    Default: $HOME/.dotfiles/\n"
+    printf "    Default: $HOME/dotfiles.new/\n"
     echo
 
   fi
@@ -93,13 +93,18 @@ dotm_add_usage() {
     echo
 
     # :flag.usage
-    echo "  --encrypted, -e"
+    echo "  --encrypt, -e"
     printf "    Encrypt the file/directories in the dotfiles\n"
     echo
 
     # :flag.usage
     echo "  --copy, -c"
     printf "    Copy the dotfiles instead of using links\n"
+    echo
+
+    # :flag.usage
+    echo "  --archive, -a"
+    printf "    Compress the file/directories into a tarball in the dotfiles\n"
     echo
 
     # :flag.usage
@@ -165,10 +170,16 @@ inspect_args() {
 # src/lib/color.sh
 #!/bin/bash
 
+if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  ENABLE_COLOR=true
+else
+  ENABLE_COLOR=false
+fi
+
 print_in_color() {
   local color="$1"
   shift
-  if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  if [[ $ENABLE_COLOR == true ]]; then
     printf "$color%b\e[0m\n" "$*";
   else
     printf "%b\n" "$*";
@@ -203,7 +214,7 @@ magentaBoldUnderlined() { print_in_color "\e[1;4;35m" "$*"; }
 cyanBoldUnderlined() { print_in_color "\e[1;4;36m" "$*"; }
 
 lscolor() {
-  if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  if [[ $ENABLE_COLOR == true ]]; then
     while IFS= read -r line; do
       local key="${line%%=*}"
       local value="${line##*=}"
@@ -212,7 +223,7 @@ lscolor() {
         return 0
       fi
     done <<<"$(echo "$LS_COLORS" | tr ":" "\n")"
-    printf '%s\n' "$1"
+    printf '%b\n' "$(green "$1")"
   else
     printf '%s\n' "$1"
   fi
@@ -225,7 +236,14 @@ CONFIG_FILE=""
 
 config_init() {
   CONFIG_FILE="$1"
-  [[ -f "$CONFIG_FILE" ]] || touch "$CONFIG_FILE"
+  if ! [[ -f "$CONFIG_FILE" ]]; then
+    if ! [[ -d "$(dirname "$CONFIG_FILE")" ]]; then
+      linfo "Creating new local dotfiles repo $(lscolor "$(dirname "$CONFIG_FILE")")"
+      mkdir -p "$(dirname "$CONFIG_FILE")"
+    fi
+    linfo "Creating new empty config file $(lscolor "$CONFIG_FILE")"
+    touch "$CONFIG_FILE"
+  fi
 }
 
 CONFIG_SECTION_KEY=""
@@ -384,6 +402,97 @@ section_has() {
   [[ " $(config_keys "$2") " =~ " $1 " ]]
 }
 
+# src/lib/fs.sh
+#!/bin/bash
+
+fs_expanduser() {
+  echo "${1/~/$HOME}"
+}
+
+fs_reluser() {
+  echo "${1/$HOME/~}"
+}
+
+fs_dotfile() {
+  local rel="$(fs_reluser "$1")"
+  local pkg="$2"
+  local fname="$(basename "$rel")"
+  rel="${rel#~/}"
+  fname="${fname#.}"
+
+  local res=""
+  if [ -n "$pkg" ]; then
+    res="$DOTFILES$(dirname "$rel")/$pkg.$fname"
+  else
+    res="$DOTFILES$(dirname "$rel")/$fname"
+  fi
+  echo "${res/\/.\//\/}"
+}
+
+# src/lib/ui.sh
+#!/bin/bash
+
+_log() {
+  local key="$1"
+  shift
+  printf "[%b] %b\n" "$key" "$*" >&2
+}
+
+linfo() {
+  _log "$(greenBold "I")" "$@"
+}
+
+lwarn() {
+  _log "$(yellowBold "W")" "$@"
+}
+
+lerror() {
+  _log "$(redBold "E")" "$@"
+}
+
+confirm() {
+  local prompt="$(cyanBold ">>>") $1"
+  if [[ -t 1 ]]; then
+    while true; do
+      read -u 1 -n 1 -rp "$prompt (y/n): "
+      printf '\n'
+      case "$REPLY" in
+
+        [Yy]*) return 0;;
+        [Nn]*) return 1;;
+        *) lwarn "Confirmation response must be 'y' or 'n'"
+      esac
+    done
+  else
+    return 1
+  fi
+}
+
+PASSWORD=""
+password() {
+  local prompt="$(cyanBold ">>>") $1"
+  if [[ -n "$PASSWORD" ]] ; then
+    return 0
+  fi
+
+  if [[ -t 1 ]]; then
+    while true; do
+      read -srp "$prompt: " PASSWORD
+      printf "\n"
+      if [[ -z "$PASSWORD" ]]; then
+        lwarn "Password must not be empty"
+      else
+        break
+      fi
+    done
+  else
+    return 1
+  fi
+}
+get_password() {
+  echo "$PASSWORD"
+}
+
 # src/lib/validations/validate_dir_exists.sh
 validate_dir_exists() {
   [[ -d "$1" ]] || echo "must be an existing directory"
@@ -414,27 +523,38 @@ validate_not_empty() {
 dotm_add_command() {
   # src/add_command.sh
   #!/bin/bash
+  inspect_args
 
-  config_init "tmp.ini"
+  config_init "${DOTFILES}dotm.ini"
 
-  config_keys
+  for sysfile in ${args[FILE]}; do
+    sysfile="${sysfile//\"/}"
+    sysfile="$(fs_expanduser "$sysfile")"
+    realfile="$sysfile"
+    type="file"
+    [ -e "$sysfile" ] || continue
+    if [ -d "$sysfile" ]; then
+      type="directory"
+    fi
 
-  config_has "nvim" && echo "true" || echo "false"
-  config_has "lua" && echo "true" || echo "false"
+    if [[ -L "$sysfile" ]]; then
+      realfile="$(realpath "$sysfile")"
+    fi
 
-  config_get "nvim"
-  section_keys
-  section_get "depends"
-  section_set "depends" "zsh bspwm"
-  section_set "testing" "hello world"
-  section_del "depends"
-  config_set
-
-  config_del "sxhkd"
-
-  config_get "lua"
-  section_set "testing" "my lua package"
-  config_set
+    dotfile="$(fs_dotfile "$sysfile" "${args[--package]}")"
+    if [[ "$realfile" = $DOTFILES/* ]]; then
+      lwarn "The $type $(lscolor "$sysfile") is already tracked in the dotfiles"
+      continue
+    elif [[ -e "$dotfile" ]]; then
+      if [[ -z "${args[--force]}" ]] && ! confirm "The dotfile $(lscolor "$dotfile") already exists, do you want to overwrite it"; then
+        lwarn "The $type $(lscolor "$sysfile") would overwrite an existing dotfile, skipping"
+        continue
+      else
+        lwarn "Overwriting $type $(lscolor "$dotfile") with $(lscolor "$sysfile")"
+      fi
+    fi
+    linfo "Added $type $(lscolor "$sysfile") to the dotfiles"
+  done
 }
 
 # :command.parse_requirements
@@ -454,7 +574,7 @@ parse_requirements() {
 
   esac
   # :command.environment_variables_filter
-  export DOTFILES="${DOTFILES:-$HOME/.dotfiles/}"
+  export DOTFILES="${DOTFILES:-$HOME/dotfiles.new/}"
   if [[ -z "${DOTFILES:-}" ]]; then
     printf "missing required environment variable: DOTFILES\n"
     exit 1
@@ -549,16 +669,37 @@ dotm_add_parse_requirements() {
       ;;
 
     # :flag.case
-    --encrypted | -e )
+    --encrypt | -e )
       # :flag.conflicts
-      args[--encrypted]=1
+      if [[ -n "${args[--copy]:-}" ]]; then
+        printf "conflicting options: %s cannot be used with %s\n" "$key" "--copy"
+        exit 1
+      fi
+      args[--encrypt]=1
       shift
       ;;
 
     # :flag.case
     --copy | -c )
       # :flag.conflicts
+      for conflict in --encrypt --archive; do
+        if [[ -n "${args[$conflict]:-}" ]]; then
+          printf "conflicting options: %s cannot be used with %s\n" "$key" "$conflict"
+          exit 1
+        fi
+      done
       args[--copy]=1
+      shift
+      ;;
+
+    # :flag.case
+    --archive | -a )
+      # :flag.conflicts
+      if [[ -n "${args[--copy]:-}" ]]; then
+        printf "conflicting options: %s cannot be used with %s\n" "$key" "--copy"
+        exit 1
+      fi
+      args[--archive]=1
       shift
       ;;
 

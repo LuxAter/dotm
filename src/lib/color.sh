@@ -1,9 +1,15 @@
 #!/bin/bash
 
+if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  ENABLE_COLOR=true
+else
+  ENABLE_COLOR=false
+fi
+
 print_in_color() {
   local color="$1"
   shift
-  if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  if [[ $ENABLE_COLOR == true ]]; then
     printf "$color%b\e[0m\n" "$*";
   else
     printf "%b\n" "$*";
@@ -38,7 +44,7 @@ magentaBoldUnderlined() { print_in_color "\e[1;4;35m" "$*"; }
 cyanBoldUnderlined() { print_in_color "\e[1;4;36m" "$*"; }
 
 lscolor() {
-  if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
+  if [[ $ENABLE_COLOR == true ]]; then
     while IFS= read -r line; do
       local key="${line%%=*}"
       local value="${line##*=}"
@@ -47,7 +53,7 @@ lscolor() {
         return 0
       fi
     done <<<"$(echo "$LS_COLORS" | tr ":" "\n")"
-    printf '%s\n' "$1"
+    printf '%b\n' "$(green "$1")"
   else
     printf '%s\n' "$1"
   fi
