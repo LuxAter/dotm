@@ -39,6 +39,9 @@ config_get() {
       CONFIG_SECTION="$CONFIG_SECTION$line\n"
     fi
   done < "$CONFIG_FILE"
+
+  echo "$CONFIG_SECTION"
+  if [[ $found == true ]]; then return 0; else return 1; fi
 }
 
 ## Write a section to the config file
@@ -129,12 +132,15 @@ section_get() {
   local key="$1"
   local body="${2:-$CONFIG_SECTION}"
 
+  local found=false
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ $line =~ ^$key\s*=\s*(.+)\s*$ ]]; then
+      found=true
       echo "${BASH_REMATCH[1]}"
       break
     fi
   done < <(echo -e "$body")
+  if [[ $found == true ]]; then return 0; else return 1; fi
 }
 
 ## Add or update a key=value pair in the config section
@@ -164,7 +170,7 @@ section_set() {
   fi
 
   CONFIG_SECTION="$output\n"
-
+  echo "$output"
 }
 
 ## Delete a value from the config section
@@ -185,6 +191,7 @@ section_del() {
   done < <(echo -e "$body")
 
   CONFIG_SECTION="$output\n"
+  echo "$output"
 }
 
 ## Return an array of keys in the config section
@@ -207,5 +214,5 @@ section_keys() {
 ##  if section_has "key"; then ...
 ##  if section_has "key" "$section"; then ...
 section_has() {
-  [[ " $(config_keys "$2") " =~ " $1 " ]]
+  [[ " $(section_keys "$2") " =~ " $1 " ]]
 }
