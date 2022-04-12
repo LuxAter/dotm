@@ -1,16 +1,26 @@
 #!/bin/bash
 
-if [[ -z ${NO_COLOR+x} ]] && [[ -t 1 ]]; then
-  ENABLE_COLOR=true
-else
-  ENABLE_COLOR=false
-fi
+ENABLE_COLOR=false
+
+configure_color() {
+  if [[ -z ${NO_COLOR+x} ]] && [ "$1" == "true" ]; then
+    ENABLE_COLOR=true
+  else
+    ENABLE_COLOR=false
+  fi
+}
+
+[ -t 1 ] && configure_color true
 
 print_in_color() {
   local color="$1"
   shift
   if [[ $ENABLE_COLOR == true ]]; then
-    printf "$color%b\e[0m\n" "$*";
+    if [[ $UNIT_TESTS == true ]]; then
+      printf "\\$color%b\\\e[0m\n" "$*";
+    else
+      printf "$color%b\e[0m\n" "$*";
+    fi
   else
     printf "%b\n" "$*";
   fi
@@ -49,11 +59,15 @@ lscolor() {
       local key="${line%%=*}"
       local value="${line##*=}"
       if [[ "$1" == $key ]]; then
-        printf '%b%s%b\n' "\e[${value}m" "$1" "\e[0m"
+        if [[ $UNIT_TESTS == true ]]; then
+          printf '%b%s%b\n' "\\\e[${value}m" "$1" "\\\e[0m"
+        else
+          printf '%b%s%b\n' "\e[${value}m" "$1" "\e[0m"
+        fi
         return 0
       fi
     done <<<"$(echo "$LS_COLORS" | tr ":" "\n")"
-    printf '%b\n' "$(green "$1")"
+    green "$1"
   else
     printf '%s\n' "$1"
   fi
