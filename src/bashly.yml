@@ -1,6 +1,6 @@
 name: dotm
 help: Personal dotfiles manager utility
-version: 0.1.3
+version: 0.1.4
 
 environment_variables:
   - name: DOTFILES
@@ -9,8 +9,23 @@ environment_variables:
     help: Path to the local dotfiles repository
 
 commands:
+  - name: bootstrap
+    short: b
+    help: Bootstrap the local dotfiles repository and dotm package
+    group: Package
+    dependencies:
+      - git
+      - curl
+
+  - name: update
+    short: u
+    help: Check for updates to the dotm package
+    dependencies:
+      - curl
+
   - name: add
     short: a
+    group: Dotfile
     help: Add new files/directories to the dotfiles
 
     dependencies:
@@ -36,7 +51,7 @@ commands:
         help: Encrypt the file/directories in the dotfiles
       - long: --copy
         short: -c
-        conflicts: [--encrypt,--archive]
+        conflicts: [--encrypt, --archive]
         help: Copy the dotfiles instead of using links
       - long: --archive
         short: -a

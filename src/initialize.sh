@@ -5,3 +5,5 @@
 ## CONFIG_FILE=settings.ini
 ##
 ## Feel free to empty (but not delete) this file.
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)

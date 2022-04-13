@@ -1,7 +1,7 @@
 setup() {
   load 'test_helper/bats-support/load'
-  load 'test_helper/bats-assert/load' 
-  load 'test_helper/bats-file/load' 
+  load 'test_helper/bats-assert/load'
+  load 'test_helper/bats-file/load'
 
   UNIT_TESTS=true
   source ./src/lib/color.sh
@@ -16,7 +16,7 @@ setup() {
   assert_output "[W] Hello World"
 
   run lerror "Hello World"
-  assert_output "[E] Hello World"
+  assert_output "[E] Hello Worl"
 }
 
 @test "Log arguments are concatinated" {

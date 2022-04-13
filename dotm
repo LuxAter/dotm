@@ -33,8 +33,11 @@ dotm_usage() {
   printf "  dotm --version | -v\n"
   echo
   # :command.usage_commands
-  printf "Commands:\n"
-  echo "  add   Add new files/directories to the dotfiles"
+  printf "Package Commands:\n"
+  echo "  bootstrap   Bootstrap the local dotfiles repository and dotm package"
+  echo "  update      Check for updates to the dotm package"
+  printf "\nDotfile Commands:\n"
+  echo "  add         Add new files/directories to the dotfiles"
   echo
 
   if [[ -n $long_usage ]]; then
@@ -54,6 +57,66 @@ dotm_usage() {
     echo "  DOTFILES (required)"
     printf "    Path to the local dotfiles repository\n"
     printf "    Default: $HOME/dotfiles.new\n"
+    echo
+
+  fi
+}
+
+# :command.usage
+dotm_bootstrap_usage() {
+  if [[ -n $long_usage ]]; then
+    printf "dotm bootstrap - Bootstrap the local dotfiles repository and dotm package\n"
+    echo
+
+  else
+    printf "dotm bootstrap - Bootstrap the local dotfiles repository and dotm package\n"
+    echo
+
+  fi
+
+  printf "Shortcut: b\n"
+  echo
+
+  printf "Usage:\n"
+  printf "  dotm bootstrap\n"
+  printf "  dotm bootstrap --help | -h\n"
+  echo
+
+  if [[ -n $long_usage ]]; then
+    printf "Options:\n"
+    # :command.usage_fixed_flags
+    echo "  --help, -h"
+    printf "    Show this help\n"
+    echo
+
+  fi
+}
+
+# :command.usage
+dotm_update_usage() {
+  if [[ -n $long_usage ]]; then
+    printf "dotm update - Check for updates to the dotm package\n"
+    echo
+
+  else
+    printf "dotm update - Check for updates to the dotm package\n"
+    echo
+
+  fi
+
+  printf "Shortcut: u\n"
+  echo
+
+  printf "Usage:\n"
+  printf "  dotm update\n"
+  printf "  dotm update --help | -h\n"
+  echo
+
+  if [[ -n $long_usage ]]; then
+    printf "Options:\n"
+    # :command.usage_fixed_flags
+    echo "  --help, -h"
+    printf "    Show this help\n"
     echo
 
   fi
@@ -606,6 +669,152 @@ validate_not_empty() {
 
 # :command.command_functions
 # :command.function
+dotm_bootstrap_command() {
+  # src/bootstrap_command.sh
+  #!/usr/bash
+
+  INSTALL_DIR="$HOME/.local/bin"
+
+  install_dotm() {
+    if [ "$SCRIPT_DIR" == "$INSTALL_DIR" ]; then
+      linfo "dotm is already installed in $(lscolor "$INSTALL_DIR")"
+      exit 0
+    fi
+
+    if ! [ -d "$INSTALL_DIR" ]; then
+      mkdir -p "$INSTALL_DIR"
+    fi
+
+    if [ -e "$INSTALL_DIR/dotm" ]; then
+      installed_version="$("$INSTALL_DIR/dotm" --version)"
+      installed_major="${installed_version%%.*}"
+      installed_minor_patch="${installed_version#*.}"
+      installed_minor="${installed_minor_patch%%.*}"
+      installed_patch="${installed_minor_patch#*.}"
+
+      current_major="${version%%.*}"
+      current_minor_patch="${version#*.}"
+      current_minor="${current_minor_patch%%.*}"
+      current_patch="${current_minor_patch#*.}"
+
+      if [ "$installed_major" -gt "$current_major" ]; then
+        lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
+        return 0
+      elif [ "$installed_major" -eq "$current_major" ]; then
+        if [ "$installed_minor" -gt "$current_minor" ]; then
+          lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
+          return 0
+        elif [ "$installed_minor" -eq "$current_minor" ]; then
+          if [ "$installed_patch" -gt "$current_patch" ]; then
+            lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
+            return 0
+          elif [ "$installed_patch" -eq "$current_patch" ]; then
+            lerror "The version of dotm installed is the same as the one being bootstraped $(yellowBold "v$version")"
+            return 0
+          fi
+        fi
+      fi
+
+      linfo "Upgrading dotm $(yellowBold "v$installed_version") $(bold "->") $(yellowBold "v$version")"
+      rm -f "$INSTALL_DIR/dotm" || return 1
+    else
+      linfo "Installing dotm $(yellowBold "v$version")"
+    fi
+
+    cp "$SCRIPT_DIR/$(basename -- "${BASH_SOURCE[0]}")" "$INSTALL_DIR/dotm" || return 1
+    chmod +x "$INSTALL_DIR/dotm" || return 1
+    return 0
+  }
+
+  setup_dotfiles() {
+    if confirm "Do you have an existing git repo"; then
+      repo="$(input "Enter the git url for the dotfiles repo")"
+      [ -z "$repo" ] && return 1
+
+      git clone --depth=1 --no-single-branch "$repo" "$DOTFILES" || return 1
+
+      linfo "Cloned existing dotfies repo into $(lscolor "$DOTFILES"), remember to run 'dotm set'"
+    else
+      mkdir -p "$DOTFILES" || return 1
+      touch "$DOTFILES/dotm.ini" || return 1
+
+      linfo "Created new dotfiles repo in $(lscolor "$DOTFILES")"
+    fi
+  }
+
+  if confirm "Do you want to install dotm into $(lscolor "$INSTALL_DIR")"; then
+    install_dotm || exit 1
+  fi
+
+  if confirm "Do you want to install bash completions for dotm"; then
+    COMPLETIONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completions/completions"
+    [ -d "${COMPLETIONS_DIR}" ] || mkdir -p "$COMPLETIONS_DIR"
+    curl "https://raw.githubusercontent.com/LuxAter/dotm/main/completions.bash" -o "$COMPLETIONS_DIR/dotm.bash"
+
+    linfo "Added bash completions for dotm"
+  fi
+
+  if confirm "Do you want to setup a dotfiles repo in $(lscolor "$DOTFILES")"; then
+    setup_dotfiles || exit 1
+  fi
+}
+
+# :command.function
+dotm_update_command() {
+  # src/update_command.sh
+  #!/usr/bash
+
+  REMOTE_URL="https://raw.githubusercontent.com/LuxAter/dotm/main/dotm"
+
+  source_code="$(curl -s "$REMOTE_URL")"
+  remote_version="$(echo "$source_code" | grep "^\s*version=")"
+  remote_version="${remote_version##*=}"
+  remote_version="${remote_version//\"/}"
+  remote_major="${remote_version%%.*}"
+  remote_minor_patch="${remote_version#*.}"
+  remote_minor="${remote_minor_patch%%.*}"
+  remote_patch="${remote_minor_patch#*.}"
+
+  current_major="${version%%.*}"
+  current_minor_patch="${version#*.}"
+  current_minor="${current_minor_patch%%.*}"
+  current_patch="${current_minor_patch#*.}"
+
+  if [ "$current_major" -gt "$remote_major" ]; then
+    lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
+    return 0
+  elif [ "$current_major" -eq "$remote_major" ]; then
+    if [ "$current_minor" -gt "$remote_minor" ]; then
+      lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
+      return 0
+    elif [ "$current_minor" -eq "$remote_minor" ]; then
+      if [ "$current_patch" -gt "$remote_patch" ]; then
+        lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
+        return 0
+      elif [ "$current_patch" -eq "$remote_patch" ]; then
+        lerror "The current version of dotm is up to date $(yellowBold "v$version")"
+        return 0
+      fi
+    fi
+  fi
+
+  if confirm "Do you want to upgrade dotm $(yellowBold "v$version") $(bold "->") $(yellowBold "v$remote_version")"; then
+    rm -f "$SCRIPT_DIR/dotm"
+    echo "$source_code" >"$SCRIPT_DIR/dotm"
+    chmod +x "$SCRIPT_DIR/dotm"
+    linfo "Upgraded dotm $(yellowBold "v$version") $(bold "->") $(yellowBold "v$remote_version")"
+
+    COMPLETION_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completions/completions/dotm.bash"
+    if [ -f "$COMPLETION_FILE" ]; then
+      rm -f "$COMPLETION_FILE"
+      curl "https://raw.githubusercontent.com/LuxAter/dotm/main/completions.bash" -o "$COMPLETION_FILE"
+
+      linfo "Upgraded bash completions for dotm"
+    fi
+  fi
+}
+
+# :command.function
 dotm_add_command() {
   # src/add_command.sh
   #!/bin/bash
@@ -692,6 +901,20 @@ parse_requirements() {
   -* )
     ;;
 
+  bootstrap | b )
+    action="bootstrap"
+    shift
+    dotm_bootstrap_parse_requirements "$@"
+    shift $#
+    ;;
+
+  update | u )
+    action="update"
+    shift
+    dotm_update_parse_requirements "$@"
+    shift $#
+    ;;
+
   add | a )
     action="add"
     shift
@@ -706,6 +929,100 @@ parse_requirements() {
     ;;
 
   esac
+  # :command.parse_requirements_while
+  while [[ $# -gt 0 ]]; do
+    key="$1"
+    case "$key" in
+
+    -?* )
+      printf "invalid option: %s\n" "$key"
+      exit 1
+      ;;
+
+    * )
+      # :command.parse_requirements_case
+      printf "invalid argument: %s\n" "$key"
+      exit 1
+      ;;
+
+    esac
+  done
+  # :command.required_args_filter
+  # :command.required_flags_filter
+  # :command.catch_all_filter
+  # :command.default_assignments
+  # :command.whitelist_filter
+  # :command.user_filter
+}
+
+# :command.parse_requirements
+dotm_bootstrap_parse_requirements() {
+  # :command.fixed_flags_filter
+  case "${1:-}" in
+  --help | -h )
+    long_usage=yes
+    dotm_bootstrap_usage
+    exit
+    ;;
+
+  esac
+  # :command.environment_variables_filter
+  # :command.dependencies_filter
+  if ! [[ -x "$(command -v git)" ]]; then
+    printf "missing dependency: git\n"
+    exit 1
+  fi
+  if ! [[ -x "$(command -v curl)" ]]; then
+    printf "missing dependency: curl\n"
+    exit 1
+  fi
+  # :command.command_filter
+  action="bootstrap"
+  # :command.parse_requirements_while
+  while [[ $# -gt 0 ]]; do
+    key="$1"
+    case "$key" in
+
+    -?* )
+      printf "invalid option: %s\n" "$key"
+      exit 1
+      ;;
+
+    * )
+      # :command.parse_requirements_case
+      printf "invalid argument: %s\n" "$key"
+      exit 1
+      ;;
+
+    esac
+  done
+  # :command.required_args_filter
+  # :command.required_flags_filter
+  # :command.catch_all_filter
+  # :command.default_assignments
+  # :command.whitelist_filter
+  # :command.user_filter
+}
+
+# :command.parse_requirements
+dotm_update_parse_requirements() {
+  # :command.fixed_flags_filter
+  case "${1:-}" in
+  --help | -h )
+    long_usage=yes
+    dotm_update_usage
+    exit
+    ;;
+
+  esac
+  # :command.environment_variables_filter
+  # :command.dependencies_filter
+  if ! [[ -x "$(command -v curl)" ]]; then
+    printf "missing dependency: curl\n"
+    exit 1
+  fi
+  # :command.command_filter
+  action="update"
   # :command.parse_requirements_while
   while [[ $# -gt 0 ]]; do
     key="$1"
@@ -853,12 +1170,14 @@ dotm_add_parse_requirements() {
 
 # :command.initialize
 initialize() {
-  version="0.1.3"
+  version="0.1.4"
   long_usage=''
   set -e
 
   # src/initialize.sh
   #!/bin/bash
+
+  SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 }
 
 # :command.run
@@ -869,7 +1188,23 @@ run() {
   normalize_input "$@"
   parse_requirements "${input[@]}"
 
-  if [[ $action == "add" ]]; then
+  if [[ $action == "bootstrap" ]]; then
+    if [[ ${args[--help]:-} ]]; then
+      long_usage=yes
+      dotm_bootstrap_usage
+    else
+      dotm_bootstrap_command
+    fi
+
+  elif [[ $action == "update" ]]; then
+    if [[ ${args[--help]:-} ]]; then
+      long_usage=yes
+      dotm_update_usage
+    else
+      dotm_update_command
+    fi
+
+  elif [[ $action == "add" ]]; then
     if [[ ${args[--help]:-} ]]; then
       long_usage=yes
       dotm_add_usage
