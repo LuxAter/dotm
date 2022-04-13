@@ -30,3 +30,15 @@ fs_dotfile() {
   fi
   echo "${res/\/.\//\/}"
 }
+
+## Get the md5 hash of a file or directory
+## Usage: hash="$(fs_hash "/home/user/.zshrc")"
+fs_hash() {
+  if [ -f "$1" ]; then
+    openssl md5 "$1" | cut -d' ' -f2
+  elif [ -d "$1" ]; then
+    find "$1" -type f -exec cat {} \; | openssl md5 | cut -d' ' -f2
+  else
+    echo "d41d8cd98f00b204e9800998ecf8427e"
+  fi
+}
