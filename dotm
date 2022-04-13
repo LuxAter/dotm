@@ -280,6 +280,9 @@ config_get() {
       CONFIG_SECTION="$CONFIG_SECTION$line\n"
     fi
   done < "$CONFIG_FILE"
+
+  echo "$CONFIG_SECTION"
+  if [[ $found == true ]]; then return 0; else return 1; fi
 }
 
 config_set() {
@@ -354,12 +357,15 @@ section_get() {
   local key="$1"
   local body="${2:-$CONFIG_SECTION}"
 
+  local found=false
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ $line =~ ^$key\s*=\s*(.+)\s*$ ]]; then
+      found=true
       echo "${BASH_REMATCH[1]}"
       break
     fi
   done < <(echo -e "$body")
+  if [[ $found == true ]]; then return 0; else return 1; fi
 }
 
 section_set() {
@@ -383,7 +389,7 @@ section_set() {
   fi
 
   CONFIG_SECTION="$output\n"
-
+  echo "$output"
 }
 
 
@@ -399,6 +405,7 @@ section_del() {
   done < <(echo -e "$body")
 
   CONFIG_SECTION="$output\n"
+  echo "$output"
 }
 
 section_keys() {
@@ -413,7 +420,7 @@ section_keys() {
 }
 
 section_has() {
-  [[ " $(config_keys "$2") " =~ " $1 " ]]
+  [[ " $(section_keys "$2") " =~ " $1 " ]]
 }
 
 # src/lib/fs.sh
@@ -478,15 +485,60 @@ confirm() {
       printf '\n' 1>&2
       if [ -z "$REPLY" ]; then
         lwarn "No user input after 10s, assuming 'n'"
-        return 1;
+        return 1
       fi
       case "$REPLY" in
-
-        [Yy]*) return 0;;
-        [Nn]*) return 1;;
-        *) lwarn "Confirmation response must be 'y' or 'n'"
+      [Yy]*) return 0 ;;
+      [Nn]*) return 1 ;;
+      *) lwarn "Confirmation response must be 'y' or 'n'" ;;
       esac
     done
+  else
+    return 1
+  fi
+}
+
+input() {
+  local prompt="$(cyanBold ">>>") $1"
+  if [[ $IS_TTY == true ]] || [[ $UNIT_TESTS == true ]]; then
+    read -t 30 -rp "$prompt: "
+    if [ -z "$REPLY" ]; then
+      lwarn "No user input after 30s or input is empty"
+      return 1
+    fi
+    echo "$REPLY"
+  else
+    return 1
+  fi
+}
+
+choose() {
+  local prompt="$(cyanBold ">>>") $1"
+  shift
+  local options=()
+  while [ $# -ne 0 ]; do
+    options+=("$1")
+    shift
+  done
+  local count=${#options[@]}
+  if [[ $IS_TTY == true ]] || [[ $UNIT_TESTS == true ]]; then
+    for i in $(seq 0 $((count-1))); do
+      printf " %b%b %b\n" "$(yellowBold "$((i+1))")" "$(bold ")")" "${options[$i]}" 1>&2
+    done
+    while true; do
+      read -t 10 -n 1 -rp "$prompt: "
+      printf '\n' 1>&2
+      if [ -z "$REPLY" ]; then
+        lwarn "No user input after 10s"
+        return 1
+      elif ! [[ "$REPLY" =~ ^[0-9]$ ]] || [ "$REPLY" -eq 0 ] || [ "$REPLY" -gt ${#options[@]} ]; then
+        lwarn "Input must be a number for one of the above choices"
+      else
+        break
+      fi
+    done
+    REPLY=$((REPLY-1))
+    echo "${options[$REPLY]}"
   else
     return 1
   fi
@@ -495,7 +547,7 @@ confirm() {
 PASSWORD=""
 password() {
   local prompt="$(cyanBold ">>>") $1"
-  if [[ -n "$PASSWORD" ]] ; then
+  if [[ -n "$PASSWORD" ]]; then
     echo "$PASSWORD"
     return 0
   fi
@@ -549,37 +601,37 @@ dotm_add_command() {
   #!/bin/bash
   inspect_args
 
-  config_init "${DOTFILES}dotm.ini"
-
-  for sysfile in ${args[FILE]}; do
-    sysfile="${sysfile//\"/}"
-    sysfile="$(fs_expanduser "$sysfile")"
-    realfile="$sysfile"
-    type="file"
-    [ -e "$sysfile" ] || continue
-    if [ -d "$sysfile" ]; then
-      type="directory"
-    fi
-
-    if [[ -L "$sysfile" ]]; then
-      realfile="$(realpath "$sysfile")"
-    fi
-
-    dotfile="$(fs_dotfile "$sysfile" "${args[--package]}")"
-    if [[ "$realfile" = $DOTFILES/* ]]; then
-      lwarn "The $type $(lscolor "$sysfile") is already tracked in the dotfiles"
-      continue
-    elif [[ -e "$dotfile" ]]; then
-      if [[ -z "${args[--force]}" ]] && ! confirm "The dotfile $(lscolor "$dotfile") already exists, do you want to overwrite it"; then
-        lwarn "The $type $(lscolor "$sysfile") would overwrite an existing dotfile, skipping"
-        continue
-      else
-        lwarn "Overwriting $type $(lscolor "$dotfile") with $(lscolor "$sysfile")"
-      fi
-    fi
-
-    linfo "Added $type $(lscolor "$sysfile") to the dotfiles"
-  done
+  # config_init "${DOTFILES}dotm.ini"
+  #
+  # for sysfile in ${args[FILE]}; do
+  #   sysfile="${sysfile//\"/}"
+  #   sysfile="$(fs_expanduser "$sysfile")"
+  #   realfile="$sysfile"
+  #   type="file"
+  #   [ -e "$sysfile" ] || continue
+  #   if [ -d "$sysfile" ]; then
+  #     type="directory"
+  #   fi
+  #
+  #   if [[ -L "$sysfile" ]]; then
+  #     realfile="$(realpath "$sysfile")"
+  #   fi
+  #
+  #   dotfile="$(fs_dotfile "$sysfile" "${args[--package]}")"
+  #   if [[ "$realfile" = $DOTFILES/* ]]; then
+  #     lwarn "The $type $(lscolor "$sysfile") is already tracked in the dotfiles"
+  #     continue
+  #   elif [[ -e "$dotfile" ]]; then
+  #     if [[ -z "${args[--force]}" ]] && ! confirm "The dotfile $(lscolor "$dotfile") already exists, do you want to overwrite it"; then
+  #       lwarn "The $type $(lscolor "$sysfile") would overwrite an existing dotfile, skipping"
+  #       continue
+  #     else
+  #       lwarn "Overwriting $type $(lscolor "$dotfile") with $(lscolor "$sysfile")"
+  #     fi
+  #   fi
+  #
+  #   linfo "Added $type $(lscolor "$sysfile") to the dotfiles"
+  # done
 }
 
 # :command.parse_requirements
