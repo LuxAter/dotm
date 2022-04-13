@@ -16,7 +16,7 @@ setup() {
   assert_output "[W] Hello World"
 
   run lerror "Hello World"
-  assert_output "[E] Hello Worl"
+  assert_output "[E] Hello World"
 }
 
 @test "Log arguments are concatinated" {
