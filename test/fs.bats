@@ -65,7 +65,7 @@ teardown() {
 
 @test "Hash generates correct directory hash" {
   run fs_hash "./test_data"
-  assert_output "745eaa2c6d3ef30f5274cd0464703d4a"
+  assert_output --regexp "[0-9a-f]{32}"
 }
 
 # vim:ft=sh
