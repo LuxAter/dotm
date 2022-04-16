@@ -195,6 +195,21 @@ dotm_add_usage() {
     printf "    Package to add the new dotfiles into\n"
     printf "    Default: host/$HOSTNAME\n"
     echo
+
+    # :flag.usage
+    echo "  --encrypt, -e"
+    printf "    Encrypt the dotfile in the repository\n"
+    echo
+
+    # :flag.usage
+    echo "  --copy, -c"
+    printf "    Copy the dotfile instead of using symlinks\n"
+    echo
+
+    # :flag.usage
+    echo "  --archive, -a"
+    printf "    Archive the dotfile in the repository\n"
+    echo
     # :command.usage_args
     printf "Arguments:\n"
 
@@ -471,7 +486,7 @@ dotm_push_usage() {
   fi
 
   printf "Usage:\n"
-  printf "  dotm push\n"
+  printf "  dotm push [options]\n"
   printf "  dotm push --help | -h\n"
   echo
 
@@ -480,6 +495,12 @@ dotm_push_usage() {
     # :command.usage_fixed_flags
     echo "  --help, -h"
     printf "    Show this help\n"
+    echo
+    # :command.usage_flags
+    # :flag.usage
+    echo "  --message, -m MESSAGE"
+    printf "    Set the commit message for the local changes\n"
+    printf "    Default: $(date +"%Y-%m-%d %H:%M:%S")\n"
     echo
 
   fi
@@ -498,7 +519,7 @@ dotm_sync_usage() {
   fi
 
   printf "Usage:\n"
-  printf "  dotm sync\n"
+  printf "  dotm sync [options]\n"
   printf "  dotm sync --help | -h\n"
   echo
 
@@ -507,6 +528,17 @@ dotm_sync_usage() {
     # :command.usage_fixed_flags
     echo "  --help, -h"
     printf "    Show this help\n"
+    echo
+    # :command.usage_flags
+    # :flag.usage
+    echo "  --max-frequnecy, -f DURATION"
+    printf "    Set a duration in seconds for how long to wait since the last sync before\n    doing it again\n"
+    echo
+
+    # :flag.usage
+    echo "  --message, -m MESSAGE"
+    printf "    Set the commit message for the local changes\n"
+    printf "    Default: $(date +"%Y-%m-%d %H:%M:%S")\n"
     echo
 
   fi
@@ -557,6 +589,139 @@ inspect_args() {
 }
 
 # :command.user_lib
+# src/lib/fs.sh
+#!/bin/bash
+
+fs_hash() {
+  if [ -f "$1" ]; then
+    openssl md5 "$1" | cut -d' ' -f2
+  elif [ -d "$1" ]; then
+    find "$1" -type f | sort | xargs cat | openssl md5 | cut -d' ' -f2
+  else
+    echo "d41d8cd98f00b204e9800998ecf8427e"
+  fi
+}
+
+
+fs_archive() {
+  local src="$1"
+  local dest="$2"
+  if ! [ -e "$src" ]; then
+    lwarn "File or directory $(lscolor "$src") not found"
+    return 1
+  fi
+
+  if [ -d "$src" ]; then
+    dest="${dest:-${src%/}.tgz}"
+    ldebug "Archiving the directory $(lscolor "$src") to $(lscolor "$dest")"
+
+    if ! tar -czf "$dest" -C "$src" "." &>/dev/null; then
+      lerror "Failed to create archive of $(lscolor "$src")"
+      return 1
+    fi
+  elif [ -f "$src" ]; then
+    dest="${dest:-$src.gz}"
+    ldebug "Archiving the file $(lscolor "$src") to $(lscolor "$dest")"
+
+    if ! gzip -9c "$src" 1>"$dest" 2>/dev/null; then
+      lerror "Failed to create archive of $(lscolor "$src")"
+      return 1
+    fi
+  else
+    lwarn "Cannot archive $(lscolor "$src"), must be a file or directory"
+    return 1
+  fi
+  echo "$dest"
+  return 0
+}
+
+fs_unarchive() {
+  local src="$1"
+  local dest="$2"
+  if ! [ -e "$src" ]; then
+    lwarn "File or directory $(lscolor "$src") not found"
+    return 1
+  fi
+
+  if [ -f "$src" ]; then
+    if [[ "$src" = *.gz ]]; then
+      dest="${dest:-${src%.gz}}"
+      ldebug "Extracing the file $(lscolor "$src") to $(lscolor "$dest")"
+
+      if ! gzip -cd "$src" 1>"$dest" 2>/dev/null; then
+        lerror "Failed to extract archive of $(lscolor "$src")"
+        return 1
+      fi
+    elif [[ "$src" = *.tgz ]]; then
+      dest="${dest:-${src%.tgz}}"
+      ldebug "Extracing the directory $(lscolor "$src") to $(lscolor "$dest")"
+
+      if ! mkdir -p "$dest"; then
+        lerror "Failed to extract archive of $(lscolor "$src")"
+        return 1
+      elif ! tar -xzf "$src" -C "$dest" &>/dev/null; then
+        lerror "Failed to extract archive of $(lscolor "$src")"
+        return 1
+      fi
+    fi
+  else
+    lwarn "Cannot unarchive $(lscolor "$src"), must be a file"
+    return 1
+  fi
+  echo "$dest"
+  return 0
+}
+
+fs_encrypt() {
+  local pswd="$1"
+  local src="$2"
+  local dest="$3"
+
+  if ! [ -e "$src" ]; then
+    lwarn "File $(lscolor "$src") not found"
+    return 1
+  fi
+
+  if [ -f "$src" ]; then
+    dest="${dest:-$src.enc}"
+    ldebug "Encrypting the file $(lscolor "$src") to $(lscolor "$dest")"
+    if ! openssl enc -aes-256-cbc -pass "pass:$pswd" -in "$src" -out "$dest" &>/dev/null; then
+      lerror "Failed to encrypt $(lscolor "$src")"
+      return 1
+    fi
+  else
+    lwarn "Cannot encrypt $(lscolor "$src"), must be a file"
+    return 1
+  fi
+  echo "$dest"
+  return 0
+}
+
+fs_decrypt() {
+  local pswd="$1"
+  local src="$2"
+  local dest="$3"
+
+  if ! [ -e "$src" ]; then
+    lwarn "File $(lscolor "$src") not found"
+    return 1
+  fi
+
+  if [ -f "$src" ]; then
+    dest="${dest:-${src%.enc}}"
+    ldebug "Decrypting the file $(lscolor "$src") to $(lscolor "$dest")"
+    if ! openssl enc -aes-256-cbc -d -pass "pass:$pswd" -in "$src" -out "$dest" &>/dev/null; then
+      lerror "Failed to decrypt $(lscolor "$src")"
+      return 1
+    fi
+  else
+    lwarn "Cannot decrypt $(lscolor "$src"), must be a file"
+    return 1
+  fi
+  echo "$dest"
+  return 0
+}
+
 # src/lib/sample_function.sh
 sample_function() {
   echo "it works"
@@ -581,9 +746,9 @@ send_completions() {
   echo $'    \'unset\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'list\'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;'
   echo $'    \'pull\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
-  echo $'    \'push\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
-  echo $'    \'sync\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
-  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;'
+  echo $'    \'push\'*) COMPREPLY=($(compgen -W "--help --message -h -m" -- "$cur")) ;;'
+  echo $'    \'sync\'*) COMPREPLY=($(compgen -W "--help --max-frequnecy --message -f -h -m" -- "$cur")) ;;'
+  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--archive --copy --encrypt --force --help --package -a -c -e -f -h -p" -- "$cur")) ;;'
   echo $'    \'set\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'\'*) COMPREPLY=($(compgen -W "--help --version -h -v add completions install list pull push remove set sync unset update" -- "$cur")) ;;'
   echo $'  esac'
@@ -983,28 +1148,79 @@ dotm_unset_command() {
 # :command.function
 dotm_pull_command() {
   # src/pull_command.sh
-  echo "# this file is located in 'src/pull_command.sh'"
-  echo "# code for 'dotm pull' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  ldebug "Pulling changes from remote dotfiles repo"
+  if ! git -C "$DOTFILES" pull --rebase &>/dev/null; then
+    lerror "Failed to pull remote changes into local dotfiles repo $(lscolor "$DOTFILES")"
+    exit 1
+  fi
 }
 
 # :command.function
 dotm_push_command() {
   # src/push_command.sh
-  echo "# this file is located in 'src/push_command.sh'"
-  echo "# code for 'dotm push' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  if [ -n "$(git -C "$DOTFILES" status --porcelain)" ]; then
+    ldebug "Commiting local changes"
+    if ! git -C "$DOTFILES" add -A &>/dev/null; then
+      lerror "Failed to add local changes to the git repo"
+      exit 1
+    fi
+
+    if ! git -C "$DOTFILES" commit -m "${args[--message]}"; then
+      lerror "Failed to create commit local changes"
+      exit 1
+    fi
+
+    if ! git -C "$DOTFILES" push; then
+      lerror "Failed to push local commits to remote repository"
+      exit 1
+    fi
+  else
+    lwarn "No local changes, no commit will be made"
+  fi
 }
 
 # :command.function
 dotm_sync_command() {
   # src/sync_command.sh
-  echo "# this file is located in 'src/sync_command.sh'"
-  echo "# code for 'dotm sync' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  # TODO: Implement frequency cache to limit sync occurances
+
+  has_local_commit=false
+  if [ -n "$(git -C "$DOTFILES" status --porcelain)" ]; then
+    ldebug "Commiting local changes"
+    if ! git -C "$DOTFILES" add -A &>/dev/null; then
+      lerror "Failed to add local changes to the git repo"
+      exit 1
+    fi
+
+    if ! git -C "$DOTFILES" commit -m "${args[--message]}"; then
+      lerror "Failed to create commit local changes"
+      exit 1
+    fi
+
+    has_local_commit=true
+  else
+    lwarn "No local changes, no new commit will be made"
+  fi
+
+  if ! git -C "$DOTFILES" pull --rebase; then
+    lerror "Failed to pull remote changes into local dotfiles $(lscolor "$DOTFILES")"
+    exit 1
+  fi
+
+  # TODO: Add configuration to run the set command to update dotfiles
+
+  if [ "$has_local_commit" == true ]; then
+    if ! git -C "$DOTFILES" push; then
+      lerror "Failed to push local commits to remote repository"
+      exit 1
+    fi
+  fi
 }
 
 # :command.parse_requirements
@@ -1308,6 +1524,27 @@ dotm_add_parse_requirements() {
         printf "%s\n" "--package requires an argument: --package, -p PACKAGE"
         exit 1
       fi
+      ;;
+
+    # :flag.case
+    --encrypt | -e )
+      # :flag.conflicts
+      args[--encrypt]=1
+      shift
+      ;;
+
+    # :flag.case
+    --copy | -c )
+      # :flag.conflicts
+      args[--copy]=1
+      shift
+      ;;
+
+    # :flag.case
+    --archive | -a )
+      # :flag.conflicts
+      args[--archive]=1
+      shift
       ;;
 
     -?* )
@@ -1697,6 +1934,19 @@ dotm_push_parse_requirements() {
   while [[ $# -gt 0 ]]; do
     key="$1"
     case "$key" in
+    # :flag.case
+    --message | -m )
+      # :flag.conflicts
+      if [[ -n ${2+x} ]]; then
+        # :flag.validations
+        args[--message]="$2"
+        shift
+        shift
+      else
+        printf "%s\n" "--message requires an argument: --message, -m MESSAGE"
+        exit 1
+      fi
+      ;;
 
     -?* )
       printf "invalid option: %s\n" "$key"
@@ -1715,6 +1965,7 @@ dotm_push_parse_requirements() {
   # :command.required_flags_filter
   # :command.catch_all_filter
   # :command.default_assignments
+  [[ -n ${args[--message]:-} ]] || args[--message]="$(date +"%Y-%m-%d %H:%M:%S")"
   # :command.whitelist_filter
   # :command.user_filter
 }
@@ -1738,6 +1989,33 @@ dotm_sync_parse_requirements() {
   while [[ $# -gt 0 ]]; do
     key="$1"
     case "$key" in
+    # :flag.case
+    --max-frequnecy | -f )
+      # :flag.conflicts
+      if [[ -n ${2+x} ]]; then
+        # :flag.validations
+        args[--max-frequnecy]="$2"
+        shift
+        shift
+      else
+        printf "%s\n" "--max-frequnecy requires an argument: --max-frequnecy, -f DURATION"
+        exit 1
+      fi
+      ;;
+
+    # :flag.case
+    --message | -m )
+      # :flag.conflicts
+      if [[ -n ${2+x} ]]; then
+        # :flag.validations
+        args[--message]="$2"
+        shift
+        shift
+      else
+        printf "%s\n" "--message requires an argument: --message, -m MESSAGE"
+        exit 1
+      fi
+      ;;
 
     -?* )
       printf "invalid option: %s\n" "$key"
@@ -1756,6 +2034,7 @@ dotm_sync_parse_requirements() {
   # :command.required_flags_filter
   # :command.catch_all_filter
   # :command.default_assignments
+  [[ -n ${args[--message]:-} ]] || args[--message]="$(date +"%Y-%m-%d %H:%M:%S")"
   # :command.whitelist_filter
   # :command.user_filter
 }

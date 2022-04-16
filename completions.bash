@@ -15,9 +15,9 @@ _dotm_completions() {
     'unset'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
     'list'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;
     'pull'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
-    'push'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
-    'sync'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
-    'add'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;
+    'push'*) COMPREPLY=($(compgen -W "--help --message -h -m" -- "$cur")) ;;
+    'sync'*) COMPREPLY=($(compgen -W "--help --max-frequnecy --message -f -h -m" -- "$cur")) ;;
+    'add'*) COMPREPLY=($(compgen -W "--archive --copy --encrypt --force --help --package -a -c -e -f -h -p" -- "$cur")) ;;
     'set'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
     ''*) COMPREPLY=($(compgen -W "--help --version -h -v add completions install list pull push remove set sync unset update" -- "$cur")) ;;
   esac

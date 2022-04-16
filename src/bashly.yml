@@ -58,6 +58,15 @@ commands:
         arg: PACKAGE
         default: host/$HOSTNAME
         help: Package to add the new dotfiles into
+      - long: --encrypt
+        short: -e
+        help: Encrypt the dotfile in the repository
+      - long: --copy
+        short: -c
+        help: Copy the dotfile instead of using symlinks
+      - long: --archive
+        short: -a
+        help: Archive the dotfile in the repository
 
   - name: install
     short: i
@@ -149,5 +158,23 @@ commands:
   - name: push
     help: Push local changes to the remote git repo
 
+    flags:
+      - long: --message
+        short: -m
+        arg: MESSAGE
+        default: $(date +"%Y-%m-%d %H:%M:%S")
+        help: Set the commit message for the local changes
+
   - name: sync
     help: Sync any changes with the remote git repo
+
+    flags:
+      - long: --max-frequnecy
+        short: -f
+        arg: DURATION
+        help: Set a duration in seconds for how long to wait since the last sync before doing it again
+      - long: --message
+        short: -m
+        arg: MESSAGE
+        default: $(date +"%Y-%m-%d %H:%M:%S")
+        help: Set the commit message for the local changes

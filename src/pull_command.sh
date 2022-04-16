@@ -1,4 +1,7 @@
-echo "# this file is located in 'src/pull_command.sh'"
-echo "# code for 'dotm pull' goes here"
-echo "# you can edit it freely and regenerate (it will not be overwritten)"
-inspect_args
+#!/bin/bash
+
+ldebug "Pulling changes from remote dotfiles repo"
+if ! git -C "$DOTFILES" pull --rebase &>/dev/null; then
+  lerror "Failed to pull remote changes into local dotfiles repo $(lscolor "$DOTFILES")"
+  exit 1
+fi
