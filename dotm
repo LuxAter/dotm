@@ -1153,7 +1153,6 @@ dotm_update_command() {
   dotm_path="${args[--path]}"
   dotm_path="${dotm_path:-$SCRIPT_DIR}/dotm"
   dotm_path="${dotm_path//\/\//\/}"
-  echo "$dotm_path"
   if [ -e "$dotm_path" ]; then
     local_version="$(grep "^\s*version=" "$dotm_path")"
     local_version="${local_version##*=}"
@@ -1180,18 +1179,22 @@ dotm_update_command() {
     can_update=true
   fi
 
-  if [ "$can_update" == true ] && [ -z "${args[--no-dotm]}" ]; then
+  if [ "$can_update" == true ] && [ -z "${args[--no - dotm]}" ]; then
     if [ -n "${args[--force]}" ] || pconfirm "Are you sure you want to update dotm"; then
       ldebug "Installing $(bold "dotm") into $(lscolor "$dotm_path")"
       [ -f "$dotm_path" ] && rm -f "$dotm_path"
-      echo "$remote_source" > "$dotm_path"
+      echo "$remote_source" >"$dotm_path"
       chmod +x "$dotm_path"
 
       linfo "Updated $(bold "dotm") $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+
+      if ! [[ ":$PATH:" == *":${args[--path]}:"* ]]; then
+        lwarn "The installation path $(lscolor "${args[--path]}") is not in your \$PATH, be sure to add it."
+      fi
     fi
   fi
 
-  if [ "$can_update" == true ] && [ -z "${args[--no-completion]}" ]; then
+  if [ "$can_update" == true ] && [ -z "${args[--no - completion]}" ]; then
     if [ -n "${args[--force]}" ] || pconfirm "Are you sure you want to update dotm completions"; then
       completion_path="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completions/completions/dotm.bash"
       ldebug "Installing $(bold "dotm completions") into $(lscolor "$completion_path")"

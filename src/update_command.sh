@@ -47,6 +47,10 @@ if [ "$can_update" == true ] && [ -z "${args[--no - dotm]}" ]; then
     chmod +x "$dotm_path"
 
     linfo "Updated $(bold "dotm") $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+
+    if ! [[ ":$PATH:" == *":${args[--path]}:"* ]]; then
+      lwarn "The installation path $(lscolor "${args[--path]}") is not in your \$PATH, be sure to add it."
+    fi
   fi
 fi
 
