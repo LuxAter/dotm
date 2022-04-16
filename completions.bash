@@ -8,8 +8,18 @@ _dotm_completions() {
   local comp_line="${COMP_WORDS[@]:1}"
 
   case "$comp_line" in
-    'add'*) COMPREPLY=($(compgen -W "--copy --encrypted --force --help --package -c -e -f -h -p" -- "$cur")) ;;
-    ''*) COMPREPLY=($(compgen -W "--help --version -h -v add" -- "$cur")) ;;
+    'completions'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
+    'install'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
+    'update'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm -C -D -c -f -h" -- "$cur")) ;;
+    'remove'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;
+    'unset'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
+    'list'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;
+    'pull'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
+    'push'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
+    'sync'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
+    'add'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;
+    'set'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
+    ''*) COMPREPLY=($(compgen -W "--help --version -h -v add completions install list pull push remove set sync unset update" -- "$cur")) ;;
   esac
 }
 

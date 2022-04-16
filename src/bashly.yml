@@ -1,6 +1,6 @@
 name: dotm
 help: Personal dotfiles manager utility
-version: 0.1.4
+version: 0.1.0
 
 environment_variables:
   - name: DOTFILES
@@ -9,62 +9,145 @@ environment_variables:
     help: Path to the local dotfiles repository
 
 commands:
-  - name: bootstrap
-    short: b
-    help: Bootstrap the local dotfiles repository and dotm package
-    group: Package
-    dependencies:
-      - git
-      - curl
-
-    flags:
-      - long: --auto
-        short: -a
-        help: Automatically install dotm components
-      - long: --force
-        short: -f
-        help: Force installing this version of dotm
+  - name: completions
+    short: C
+    help: Generate bash autocompletions
 
   - name: update
-    short: u
-    help: Check for updates to the dotm package
+    short: U
+    help: Update and install the dotm script
     dependencies:
       - curl
+
+    args:
+      - name: path
+        validate: dir_exists
+        help: Path of the dotm installation to update
+
+    flags:
+      - long: --force
+        short: -f
+        help: Automatically accept all user prompts
+      - long: --check
+        short: -c
+        help: Only check for updates, don't actually update
+      - long: --no-completion
+        short: -C
+        help: Don't update the bash completions
+      - long: --no-dotm
+        short: -D
+        help: Don't update the dotm script
 
   - name: add
     short: a
     group: Dotfile
-    help: Add new files/directories to the dotfiles
-
-    dependencies:
-      - openssl
-      - tar
+    help: Add new files/directories to a dotfile package
 
     args:
-      - name: FILE
+      - name: files
         required: true
         repeatable: true
-        validate: file_or_dir_exists
-        help: Files/Directories to import into the dotfiles repo
+        help: List of files or directories to add into the dotfiles
 
     flags:
+      - long: --force
+        short: -f
+        help: Automatically accept all user prompts
       - long: --package
         short: -p
         arg: PACKAGE
         default: host/$HOSTNAME
-        help: Set the package to contain the new files
-      - long: --encrypt
-        short: -e
-        conflicts: [--copy]
-        help: Encrypt the file/directories in the dotfiles
-      - long: --copy
-        short: -c
-        conflicts: [--encrypt, --archive]
-        help: Copy the dotfiles instead of using links
-      - long: --archive
-        short: -a
-        conflicts: [--copy]
-        help: Compress the file/directories into a tarball in the dotfiles
+        help: Package to add the new dotfiles into
+
+  - name: install
+    short: i
+    help: Copy dotfiles directly into system paths
+
+    args:
+      - name: packages
+        repeatable: true
+        default: host/$HOSTNAME
+        help: List of dotfile packages to install into the system
+
+    flags:
       - long: --force
         short: -f
-        help: Force overwriting duplicate dotfiles
+        help: Automatically accept all user prompts
+
+  - name: list
+    short: l
+    help: List the state of all the currently configured dotfiles
+
+    args:
+      - name: packages
+        repeatable: true
+        default: host/$HOSTNAME
+        help: List of dotfile packages to include in the list
+
+    flags:
+      - long: --all
+        short: -a
+        help: Include all dotfiles in the list
+      - long: --raw
+        short: -r
+        help: Display a raw list without styling, useful in scripts
+
+  - name: remove
+    short: r
+    help: Remove file from a dotfile package
+
+    args:
+      - name: files
+        required: true
+        repeatable: true
+        help: List of files or directories to be removed from the dotfiles
+
+    flags:
+      - long: --force
+        short: -f
+        help: Automatically accept all user prompts
+      - long: --package
+        short: -p
+        arg: PACKAGE
+        default: host/$HOSTNAME
+        help: Package to remove the dotfiles from
+
+  - name: set
+    short: s
+    help: Create links from system files into the dotfiles
+
+    args:
+      - name: packages
+        repeatable: true
+        default: host/$HOSTNAME
+        help: List of dotfile packages to create the links for
+
+    flags:
+      - long: --force
+        short: -f
+        help: Automatically accept all user prompts
+
+  - name: unset
+    short: u
+    help: Remove links from system files into the dotfiles
+
+    args:
+      - name: packages
+        repeatable: true
+        default: host/$HOSTNAME
+        help: List of dotfile packages to remove the links of
+
+    flags:
+      - long: --force
+        short: -f
+        help: Automatically accept all user prompts
+
+  - name: pull
+    group: Git
+    help: Pull changes from the remote git repo
+
+  - name: push
+    help: Push local changes to the remote git repo
+
+  - name: sync
+    help: Sync any changes with the remote git repo
