@@ -12,6 +12,12 @@ fs_reluser() {
   echo "${1/$HOME/"~"}"
 }
 
+## Get the path relative to the dotfiles dir
+## Usage: fs_reldot "/home/user/.dotfiles/zsh.zshrc"
+fs_reldot() {
+  echo "${1/$DOTFILES\//}"
+}
+
 ## Get the dotfile equivalent of a system path
 ## Usage: fs_dotfile "/home/user/.zshrc"
 fs_dotfile() {

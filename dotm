@@ -78,7 +78,7 @@ dotm_bootstrap_usage() {
   echo
 
   printf "Usage:\n"
-  printf "  dotm bootstrap\n"
+  printf "  dotm bootstrap [options]\n"
   printf "  dotm bootstrap --help | -h\n"
   echo
 
@@ -87,6 +87,16 @@ dotm_bootstrap_usage() {
     # :command.usage_fixed_flags
     echo "  --help, -h"
     printf "    Show this help\n"
+    echo
+    # :command.usage_flags
+    # :flag.usage
+    echo "  --auto, -a"
+    printf "    Automatically install dotm components\n"
+    echo
+
+    # :flag.usage
+    echo "  --force, -f"
+    printf "    Force installing this version of dotm\n"
     echo
 
   fi
@@ -497,6 +507,10 @@ fs_reluser() {
   echo "${1/$HOME/"~"}"
 }
 
+fs_reldot() {
+  echo "${1/$DOTFILES\//}"
+}
+
 fs_dotfile() {
   local rel="$(fs_reluser "$1")"
   local pkg="$2"
@@ -521,6 +535,135 @@ fs_hash() {
     find "$1" -type f -exec cat {} \; | openssl md5 | cut -d' ' -f2
   else
     echo "d41d8cd98f00b204e9800998ecf8427e"
+  fi
+}
+
+# src/lib/link.sh
+#!/bin/bash
+
+link_set() {
+  local attrib="$1"
+  local dotfile="$DOTFILES/$2"
+  local sysfile="$(fs_expanduser "$3")"
+  local tmpfile="$sysfile"
+  local force="$4"
+
+  [ -d "$(dirname "$sysfile")" ] || mkdir -p "$(dirname "$sysfile")"
+
+  if [[ "$attrib" = *X* ]]; then
+    tmpfile="$tmpfile.tgz"
+  fi
+  if [[ "$attrib" = *E* ]]; then
+    tmpfile="$tmpfile.tgz"
+  fi
+
+  # TODO: Improve choices for overwriting. Pick from a list of overwrite, skip, compare diff, and backup
+  if [[ "$attrib" = *C* ]]; then
+    if ! [ -e "$tmpfile" ]; then
+      cp -r "$dotfile" "$tmpfile"
+    elif ! [[ "$(fs_hash "$dotfile")" = "$(fs_hash "$tmpfile")" ]]; then
+      if [ -z "$force" ] && ! confirm "Do you want to overwrite $(lscolor "$tmpfile")"; then
+        return 0
+      fi
+      rm -rf "$tmpfile"
+      cp -r "$dotfile" "$tmpfile"
+    fi
+  else
+    if ! [ -e "$tmpfile" ]; then
+      ln -s "$dotfile" "$tmpfile"
+    elif ! [ "$(realpath "$tmpfile")" = "$dotfile" ]; then
+      if [ -z "$force" ] && ! confirm "Do you want to overwrite $(lscolor "$tmpfile")"; then
+        return 0
+      fi
+      rm -rf "$tmpfile"
+      ln -s "$dotfile" "$tmpfile"
+    fi
+  fi
+
+  # If the file was encrypted handle the decryption
+  if [[ "$attrib" = *E* ]]; then
+    pswd="$(password "Enter encryption password")"
+    if [ -z "$pswd" ]; then
+      [ -e "$tmpfile" ] && rm -f "$tmpfile"
+      return 0
+    fi
+    if ! openssl enc -aes-256-cbc -pass "pass:$pswd" -d -in "$tmpfile" -out "${tmpfile%.enc}" &>/dev/null; then
+      lerror "Failed to decrypt $(lscolor "$tmpfile")"
+      return 1
+    fi
+    tmpfile="${tmpfile%.enc}"
+  fi
+
+  # If the file was an archive remove the original and extract the archive.
+  if [[ "$attrib" = *X* ]]; then
+    if [ -e "${tmpfile%.tgz}" ]; then
+      if [ -z "$force" ] && ! confirm "Do you want to overwrite $(lscolor "$sysfile")"; then
+        return 0
+      fi
+      rm -rf "${tmpfile%.tgz}"
+    fi
+    if ! tar -xzf "$tmpfile" "${tmpfile%.tgz}" &>/dev/null; then
+      lerror "Failed to extract archive $(lscolor "$tmpfile")"
+      return 1
+    fi
+    rm -f "$tmpfile"
+  fi
+}
+
+link_unset() {
+  echo "HI"
+}
+
+link_install() {
+  echo "HI"
+}
+
+# src/lib/semver.sh
+#!/usr/bash
+
+semver_eq() {
+  vera="$1"
+  verb="$2"
+
+  majora="${vera%%.*}"
+  majorb="${verb%%.*}"
+
+  minora="${vera#*.}"
+  minora="${minora%%.*}"
+  minorb="${verb#*.}"
+  minorb="${minorb%%.*}"
+  patcha="${vera##*.}"
+  patchb="${verb##*.}"
+
+  if [ "$majora" -eq "$majorb" ] && [ "$minora" -eq "$minorb" ] && [ "$patcha" -eq "$patchb" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+semver_gt() {
+  vera="$1"
+  verb="$2"
+
+  majora="${vera%%.*}"
+  majorb="${verb%%.*}"
+
+  minora="${vera#*.}"
+  minora="${minora%%.*}"
+  minorb="${verb#*.}"
+  minorb="${minorb%%.*}"
+  patcha="${vera##*.}"
+  patchb="${verb##*.}"
+
+  if [ "$majora" -gt "$majorb" ]; then
+    return 0
+  elif [ "$majora" -eq "$majorb" ] && [ "$minora" -gt "$minorb" ]; then
+    return 0
+  elif [ "$majora" -eq "$majorb" ] && [ "$minora" -eq "$minorb" ] && [ "$patcha" -gt "$patchb" ]; then
+    return 0
+  else
+    return 1
   fi
 }
 
@@ -687,31 +830,14 @@ dotm_bootstrap_command() {
 
     if [ -e "$INSTALL_DIR/dotm" ]; then
       installed_version="$("$INSTALL_DIR/dotm" --version)"
-      installed_major="${installed_version%%.*}"
-      installed_minor_patch="${installed_version#*.}"
-      installed_minor="${installed_minor_patch%%.*}"
-      installed_patch="${installed_minor_patch#*.}"
 
-      current_major="${version%%.*}"
-      current_minor_patch="${version#*.}"
-      current_minor="${current_minor_patch%%.*}"
-      current_patch="${current_minor_patch#*.}"
-
-      if [ "$installed_major" -gt "$current_major" ]; then
-        lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
-        return 0
-      elif [ "$installed_major" -eq "$current_major" ]; then
-        if [ "$installed_minor" -gt "$current_minor" ]; then
+      if [ -z "${args[--force]}" ]; then
+        if semver_eq "$installed_version" "$version"; then
+          lerror "The version of dotm installed is the same as the one being bootstraped $(yellowBold "v$version")"
+          return 0
+        elif semver_gt "$installed_version" "$version"; then
           lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
           return 0
-        elif [ "$installed_minor" -eq "$current_minor" ]; then
-          if [ "$installed_patch" -gt "$current_patch" ]; then
-            lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
-            return 0
-          elif [ "$installed_patch" -eq "$current_patch" ]; then
-            lerror "The version of dotm installed is the same as the one being bootstraped $(yellowBold "v$version")"
-            return 0
-          fi
         fi
       fi
 
@@ -742,19 +868,19 @@ dotm_bootstrap_command() {
     fi
   }
 
-  if confirm "Do you want to install dotm into $(lscolor "$INSTALL_DIR")"; then
+  if [ -n "${args[--auto]}" ] || confirm "Do you want to install dotm into $(lscolor "$INSTALL_DIR")"; then
     install_dotm || exit 1
   fi
 
-  if confirm "Do you want to install bash completions for dotm"; then
+  if [ -n "${args[--auto]}" ] || confirm "Do you want to install bash completions for dotm"; then
     COMPLETIONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completions/completions"
     [ -d "${COMPLETIONS_DIR}" ] || mkdir -p "$COMPLETIONS_DIR"
-    curl "https://raw.githubusercontent.com/LuxAter/dotm/main/completions.bash" -o "$COMPLETIONS_DIR/dotm.bash"
+    curl -s "https://raw.githubusercontent.com/LuxAter/dotm/main/completions.bash" -o "$COMPLETIONS_DIR/dotm.bash"
 
     linfo "Added bash completions for dotm"
   fi
 
-  if confirm "Do you want to setup a dotfiles repo in $(lscolor "$DOTFILES")"; then
+  if [ -z "${args[--auto]}" ] && confirm "Do you want to setup a dotfiles repo in $(lscolor "$DOTFILES")"; then
     setup_dotfiles || exit 1
   fi
 }
@@ -770,32 +896,13 @@ dotm_update_command() {
   remote_version="$(echo "$source_code" | grep "^\s*version=")"
   remote_version="${remote_version##*=}"
   remote_version="${remote_version//\"/}"
-  remote_major="${remote_version%%.*}"
-  remote_minor_patch="${remote_version#*.}"
-  remote_minor="${remote_minor_patch%%.*}"
-  remote_patch="${remote_minor_patch#*.}"
 
-  current_major="${version%%.*}"
-  current_minor_patch="${version#*.}"
-  current_minor="${current_minor_patch%%.*}"
-  current_patch="${current_minor_patch#*.}"
-
-  if [ "$current_major" -gt "$remote_major" ]; then
-    lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
+  if semver_eq "$installed_version" "$version"; then
+    lerror "The current version of dotm is up to date $(yellowBold "v$version")"
     return 0
-  elif [ "$current_major" -eq "$remote_major" ]; then
-    if [ "$current_minor" -gt "$remote_minor" ]; then
-      lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
-      return 0
-    elif [ "$current_minor" -eq "$remote_minor" ]; then
-      if [ "$current_patch" -gt "$remote_patch" ]; then
-        lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
-        return 0
-      elif [ "$current_patch" -eq "$remote_patch" ]; then
-        lerror "The current version of dotm is up to date $(yellowBold "v$version")"
-        return 0
-      fi
-    fi
+  elif semver_gt "$installed_version" "$version"; then
+    lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
+    return 0
   fi
 
   if confirm "Do you want to upgrade dotm $(yellowBold "v$version") $(bold "->") $(yellowBold "v$remote_version")"; then
@@ -821,54 +928,87 @@ dotm_add_command() {
 
   config_init "${DOTFILES}/dotm.ini"
 
+  section="$(config_get "${args[--package]}" || true)"
+
   for sysfile in ${args[FILE]}; do
     sysfile="${sysfile//\"/}"
     sysfile="$(fs_expanduser "$sysfile")"
 
-    # Check if file exists
     if ! [ -e "$sysfile" ]; then
       lwarn "File or directory $(lscolor "$sysfile") does not exist, it will be skipped"
       continue
     fi
 
-    # Determine file type for logging and attributes
     if [ -d "$sysfile" ]; then type="directory"; else type="file"; fi
 
-    # If file is already a symlink find the real file
     fpath="$sysfile"
     [ -L "$sysfile" ] && fpath="$(realpath "$sysfile")"
 
-    # If the real file is already part of the dotfiles then skip
     if [[ "$fpath" = $DOTFILES/* ]]; then
       lwarn "The $type $(lscolor "$sysfile") is already tracked in the dotfiles"
       continue
     fi
 
-    # Check that the dotfile doesn't already exist
     dotfile="$(fs_dotfile "$sysfile" "${args[--package]}")"
-    if [ -e "$dotfile" ]; then
+    if [ -e "$dotfile" ] && ! [ "$(fs_hash "$dotfile")" = "$(fs_hash "$fpath")" ]; then
       lwarn "The dotfile $type $(lscolor "$dotfile") already exists"
-      continue
+
+      if [ -z "${args[--force]}" ] && ! confirm "Do you want to overwrite the dotfile $(lscolor "$dotfile")"; then
+        continue
+      fi
+    fi
+
+    attrib=""
+
+    if [[ -n "${args[--copy]}" || -n "${args[--archive]}" || -n "${args[--encrypt]}" ]]; then
+      attrib="C"
+    fi
+
+    if [[ -n "${args[--archive]}" || (-n "${args[--encrypt]}" && -d "$sysfile") ]]; then
+      if ! tar -czf "$fpath.tgz" "$fpath" &>/dev/null; then
+        lerror "Failed to create archive for $(lscolor "$fpath")"
+        continue
+      fi
+      fpath="$fpath.tgz"
+      attrib="${attrib}X"
+    fi
+
+    if [ -n "${args[--encrypt]}" ]; then
+      pswd="$(password "Enter encryption password")"
+      [ -z "$pswd" ] && continue
+      if ! openssl enc -aes-256-cbc -pass "pass:$pswd" -in "$fpath" -out "$fpath.enc" &>/dev/null; then
+        lerror "Failed to encrypt $(lscolor "$fpath")"
+        continue
+      fi
+      fpath="$fpath.enc"
+      attrib="${attrib}E"
+    fi
+
+    # Copy the file into the dotfiles
+    [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
+    cp "$fpath" "$dotfile"
+
+    section="$(section_set ":$attrib:$(fs_reldot "$dotfile")" "$(fs_reluser "$sysfile")" "$section")"
+
+    if [[ -n "${args[--encrypt]}" && "$fpath" = *.enc && -e "$fpath" ]]; then
+      rm -rf "$fpath"
+      fpath="${fpath%.enc}"
+    fi
+
+    if [[ -n "${args[--archive]}" && "$fpath" = *.tgz && -e "$fpath" ]]; then
+      rm -rf "$fpath"
+      fpath="${fpath%.tgz}"
+    fi
+
+    if [ -z "$attrib" ]; then
+      rm -rf "$fpath"
+      link_set "$attrib" "$(fs_reldot "$dotfile")" "$(fs_reluser "$sysfile")" "${args[--force]}" || continue
     fi
 
     linfo "Added $type $(lscolor "$sysfile") into the $(bold "${args[--package]}") dotfiles"
   done
-  #
-  #   dotfile="$(fs_dotfile "$sysfile" "${args[--package]}")"
-  #   if [[ "$realfile" = $DOTFILES/* ]]; then
-  #     lwarn "The $type $(lscolor "$sysfile") is already tracked in the dotfiles"
-  #     continue
-  #   elif [[ -e "$dotfile" ]]; then
-  #     if [[ -z "${args[--force]}" ]] && ! confirm "The dotfile $(lscolor "$dotfile") already exists, do you want to overwrite it"; then
-  #       lwarn "The $type $(lscolor "$sysfile") would overwrite an existing dotfile, skipping"
-  #       continue
-  #     else
-  #       lwarn "Overwriting $type $(lscolor "$dotfile") with $(lscolor "$sysfile")"
-  #     fi
-  #   fi
-  #
-  #   linfo "Added $type $(lscolor "$sysfile") to the dotfiles"
-  # done
+
+  config_set "${args[--package]}" "$section"
 }
 
 # :command.parse_requirements
@@ -982,6 +1122,19 @@ dotm_bootstrap_parse_requirements() {
   while [[ $# -gt 0 ]]; do
     key="$1"
     case "$key" in
+    # :flag.case
+    --auto | -a )
+      # :flag.conflicts
+      args[--auto]=1
+      shift
+      ;;
+
+    # :flag.case
+    --force | -f )
+      # :flag.conflicts
+      args[--force]=1
+      shift
+      ;;
 
     -?* )
       printf "invalid option: %s\n" "$key"

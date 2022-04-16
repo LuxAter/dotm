@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-curl 'https://github.com/LuxAter/dotm/blob/main/dotm' -o /tmp/dotm
+curl 'https://raw.githubusercontent.com/LuxAter/dotm/blob/main/dotm' -o /tmp/dotm
 bash /tmp/dotm bootstrap

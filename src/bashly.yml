@@ -17,6 +17,14 @@ commands:
       - git
       - curl
 
+    flags:
+      - long: --auto
+        short: -a
+        help: Automatically install dotm components
+      - long: --force
+        short: -f
+        help: Force installing this version of dotm
+
   - name: update
     short: u
     help: Check for updates to the dotm package

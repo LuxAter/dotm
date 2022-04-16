@@ -6,32 +6,13 @@ source_code="$(curl -s "$REMOTE_URL")"
 remote_version="$(echo "$source_code" | grep "^\s*version=")"
 remote_version="${remote_version##*=}"
 remote_version="${remote_version//\"/}"
-remote_major="${remote_version%%.*}"
-remote_minor_patch="${remote_version#*.}"
-remote_minor="${remote_minor_patch%%.*}"
-remote_patch="${remote_minor_patch#*.}"
 
-current_major="${version%%.*}"
-current_minor_patch="${version#*.}"
-current_minor="${current_minor_patch%%.*}"
-current_patch="${current_minor_patch#*.}"
-
-if [ "$current_major" -gt "$remote_major" ]; then
-  lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
+if semver_eq "$installed_version" "$version"; then
+  lerror "The current version of dotm is up to date $(yellowBold "v$version")"
   return 0
-elif [ "$current_major" -eq "$remote_major" ]; then
-  if [ "$current_minor" -gt "$remote_minor" ]; then
-    lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
-    return 0
-  elif [ "$current_minor" -eq "$remote_minor" ]; then
-    if [ "$current_patch" -gt "$remote_patch" ]; then
-      lerror "A newer version of dotm is already installed $(yellowBold "v$version")"
-      return 0
-    elif [ "$current_patch" -eq "$remote_patch" ]; then
-      lerror "The current version of dotm is up to date $(yellowBold "v$version")"
-      return 0
-    fi
-  fi
+elif semver_gt "$installed_version" "$version"; then
+  lerror "A newer version of dotm is already installed $(yellowBold "v$installed_version")"
+  return 0
 fi
 
 if confirm "Do you want to upgrade dotm $(yellowBold "v$version") $(bold "->") $(yellowBold "v$remote_version")"; then

@@ -41,6 +41,14 @@ teardown() {
   assert_output "~/.zshrc"
 }
 
+@test "Get relative dotfile directories" {
+  run fs_reldot "/home/user/.dotfile/zsh.zshrc"
+  assert_output "zsh.zshrc"
+
+  run fs_reldot "/home/user/.dotfile/etc/zsh.zshrc"
+  assert_output "etc/zsh.zshrc"
+}
+
 @test "Get dotfile path of system file" {
   run fs_dotfile "~/.zshrc"
   assert_output "/home/user/.dotfile/zshrc"
