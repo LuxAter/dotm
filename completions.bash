@@ -10,7 +10,7 @@ _dotm_completions() {
   case "$comp_line" in
     'completions'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;
     'install'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
-    'update'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm -C -D -c -f -h" -- "$cur")) ;;
+    'update'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm --path --url -C -D -U -c -f -h -p" -- "$cur")) ;;
     'remove'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;
     'unset'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;
     'list'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;

@@ -19,24 +19,33 @@ commands:
     dependencies:
       - curl
 
-    args:
-      - name: path
-        validate: dir_exists
-        help: Path of the dotm installation to update
-
     flags:
       - long: --force
         short: -f
+        conflicts: [--check]
         help: Automatically accept all user prompts
       - long: --check
         short: -c
+        conflicts: [--force,--no-completion,--no-dotm]
         help: Only check for updates, don't actually update
       - long: --no-completion
         short: -C
+        conflicts: [--check]
         help: Don't update the bash completions
       - long: --no-dotm
         short: -D
+        conflicts: [--check]
         help: Don't update the dotm script
+      - long: --url
+        short: -U
+        arg: URL
+        default: https://raw.githubusercontent.com/LuxAter/dotm/main
+        help: Base url to download the scripts from
+      - long: --path
+        short: -p
+        arg: PATH
+        validate: dir_exists
+        help: Path of the dotm installation to update
 
   - name: add
     short: a

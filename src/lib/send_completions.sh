@@ -12,7 +12,7 @@ send_completions() {
   echo $'  case "$comp_line" in'
   echo $'    \'completions\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
   echo $'    \'install\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
-  echo $'    \'update\'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm -C -D -c -f -h" -- "$cur")) ;;'
+  echo $'    \'update\'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm --path --url -C -D -U -c -f -h -p" -- "$cur")) ;;'
   echo $'    \'remove\'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;'
   echo $'    \'unset\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'list\'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;'

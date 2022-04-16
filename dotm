@@ -117,7 +117,7 @@ dotm_update_usage() {
   echo
 
   printf "Usage:\n"
-  printf "  dotm update [PATH] [options]\n"
+  printf "  dotm update [options]\n"
   printf "  dotm update --help | -h\n"
   echo
 
@@ -147,11 +147,15 @@ dotm_update_usage() {
     echo "  --no-dotm, -D"
     printf "    Don't update the dotm script\n"
     echo
-    # :command.usage_args
-    printf "Arguments:\n"
 
-    # :argument.usage
-    echo "  PATH"
+    # :flag.usage
+    echo "  --url, -U URL"
+    printf "    Base url to download the scripts from\n"
+    printf "    Default: https://raw.githubusercontent.com/LuxAter/dotm/main\n"
+    echo
+
+    # :flag.usage
+    echo "  --path, -p PATH"
     printf "    Path of the dotm installation to update\n"
     echo
 
@@ -727,6 +731,55 @@ sample_function() {
   echo "it works"
 }
 
+# src/lib/semver.sh
+#!/usr/bash
+
+semver_eq() {
+  vera="$1"
+  verb="$2"
+
+  majora="${vera%%.*}"
+  majorb="${verb%%.*}"
+
+  minora="${vera#*.}"
+  minora="${minora%%.*}"
+  minorb="${verb#*.}"
+  minorb="${minorb%%.*}"
+  patcha="${vera##*.}"
+  patchb="${verb##*.}"
+
+  if [ "$majora" -eq "$majorb" ] && [ "$minora" -eq "$minorb" ] && [ "$patcha" -eq "$patchb" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+semver_gt() {
+  vera="$1"
+  verb="$2"
+
+  majora="${vera%%.*}"
+  majorb="${verb%%.*}"
+
+  minora="${vera#*.}"
+  minora="${minora%%.*}"
+  minorb="${verb#*.}"
+  minorb="${minorb%%.*}"
+  patcha="${vera##*.}"
+  patchb="${verb##*.}"
+
+  if [ "$majora" -gt "$majorb" ]; then
+    return 0
+  elif [ "$majora" -eq "$majorb" ] && [ "$minora" -gt "$minorb" ]; then
+    return 0
+  elif [ "$majora" -eq "$majorb" ] && [ "$minora" -eq "$minorb" ] && [ "$patcha" -gt "$patchb" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 # src/lib/send_completions.sh
 send_completions() {
   echo $'#!/usr/bin/env bash'
@@ -741,7 +794,7 @@ send_completions() {
   echo $'  case "$comp_line" in'
   echo $'    \'completions\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
   echo $'    \'install\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
-  echo $'    \'update\'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm -C -D -c -f -h" -- "$cur")) ;;'
+  echo $'    \'update\'*) COMPREPLY=($(compgen -W "--check --force --help --no-completion --no-dotm --path --url -C -D -U -c -f -h -p" -- "$cur")) ;;'
   echo $'    \'remove\'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;'
   echo $'    \'unset\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'list\'*) COMPREPLY=($(compgen -W "--all --help --raw -a -h -r" -- "$cur")) ;;'
@@ -1085,10 +1138,69 @@ dotm_completions_command() {
 # :command.function
 dotm_update_command() {
   # src/update_command.sh
-  echo "# this file is located in 'src/update_command.sh'"
-  echo "# code for 'dotm update' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  remote_source=""
+  remote_source="$(curl -s "${args[--url]}/dotm")"
+  if [ $? -ne 0 ]; then
+    lerror "Failed to fetch remote version of dotm from $(magentaBold "${args[--url]}/dotm")"
+  fi
+
+  remote_version="$(echo "$remote_source" | grep "^\s*version=")"
+  remote_version="${remote_version##*=}"
+  remote_version="${remote_version//\"/}"
+
+  dotm_path="${args[--path]}"
+  dotm_path="${dotm_path:-$SCRIPT_DIR}/dotm"
+  dotm_path="${dotm_path//\/\//\/}"
+  echo "$dotm_path"
+  if [ -e "$dotm_path" ]; then
+    local_version="$(grep "^\s*version=" "$dotm_path")"
+    local_version="${local_version##*=}"
+    local_version="${local_version//\"/}"
+  else
+    local_version="0.0.0"
+  fi
+
+  can_update=false
+  if semver_eq "$remote_version" "$local_version"; then
+    linfo "$(bold "dotm") is already up to date $(yellowBold "v$remote_version")"
+  elif semver_gt "$remote_version" "$local_version"; then
+    linfo "A newer version of $(bold "dotm") is available $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+    can_update=true
+  else
+    linfo "A newer version of $(bold "dotm") is already installed $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+  fi
+
+  if [ -n "${args[--check]}" ]; then
+    exit 0
+  fi
+
+  if [ -n "${args[--force]}" ]; then
+    can_update=true
+  fi
+
+  if [ "$can_update" == true ] && [ -z "${args[--no-dotm]}" ]; then
+    if [ -n "${args[--force]}" ] || pconfirm "Are you sure you want to update dotm"; then
+      ldebug "Installing $(bold "dotm") into $(lscolor "$dotm_path")"
+      [ -f "$dotm_path" ] && rm -f "$dotm_path"
+      echo "$remote_source" > "$dotm_path"
+      chmod +x "$dotm_path"
+
+      linfo "Updated $(bold "dotm") $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+    fi
+  fi
+
+  if [ "$can_update" == true ] && [ -z "${args[--no-completion]}" ]; then
+    if [ -n "${args[--force]}" ] || pconfirm "Are you sure you want to update dotm completions"; then
+      completion_path="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completions/completions/dotm.bash"
+      ldebug "Installing $(bold "dotm completions") into $(lscolor "$completion_path")"
+      [ -f "$completion_path" ] && rm -f "$completion_path"
+      curl -s "${args[--url]}/completions.bash" -o "$completion_path"
+
+      linfo "Updated $(bold "dotm completions") $(yellowBold "v$local_version") -> $(yellowBold "v$remote_version")"
+    fi
+  fi
 }
 
 # :command.function
@@ -1430,6 +1542,10 @@ dotm_update_parse_requirements() {
     # :flag.case
     --force | -f )
       # :flag.conflicts
+      if [[ -n "${args[--check]:-}" ]]; then
+        printf "conflicting options: %s cannot be used with %s\n" "$key" "--check"
+        exit 1
+      fi
       args[--force]=1
       shift
       ;;
@@ -1437,6 +1553,12 @@ dotm_update_parse_requirements() {
     # :flag.case
     --check | -c )
       # :flag.conflicts
+      for conflict in --force --no-completion --no-dotm; do
+        if [[ -n "${args[$conflict]:-}" ]]; then
+          printf "conflicting options: %s cannot be used with %s\n" "$key" "$conflict"
+          exit 1
+        fi
+      done
       args[--check]=1
       shift
       ;;
@@ -1444,6 +1566,10 @@ dotm_update_parse_requirements() {
     # :flag.case
     --no-completion | -C )
       # :flag.conflicts
+      if [[ -n "${args[--check]:-}" ]]; then
+        printf "conflicting options: %s cannot be used with %s\n" "$key" "--check"
+        exit 1
+      fi
       args[--no-completion]=1
       shift
       ;;
@@ -1451,8 +1577,44 @@ dotm_update_parse_requirements() {
     # :flag.case
     --no-dotm | -D )
       # :flag.conflicts
+      if [[ -n "${args[--check]:-}" ]]; then
+        printf "conflicting options: %s cannot be used with %s\n" "$key" "--check"
+        exit 1
+      fi
       args[--no-dotm]=1
       shift
+      ;;
+
+    # :flag.case
+    --url | -U )
+      # :flag.conflicts
+      if [[ -n ${2+x} ]]; then
+        # :flag.validations
+        args[--url]="$2"
+        shift
+        shift
+      else
+        printf "%s\n" "--url requires an argument: --url, -U URL"
+        exit 1
+      fi
+      ;;
+
+    # :flag.case
+    --path | -p )
+      # :flag.conflicts
+      if [[ -n ${2+x} ]]; then
+        # :flag.validations
+        if [[ -n $(validate_dir_exists "$2") ]]; then
+          printf "validation error in %s:\n%s\n" "--path, -p PATH" "$(validate_dir_exists "$2")"
+          exit 1
+        fi
+        args[--path]="$2"
+        shift
+        shift
+      else
+        printf "%s\n" "--path requires an argument: --path, -p PATH"
+        exit 1
+      fi
       ;;
 
     -?* )
@@ -1462,18 +1624,8 @@ dotm_update_parse_requirements() {
 
     * )
       # :command.parse_requirements_case
-      if [[ -z ${args[path]+x} ]]; then
-        # :argument.validations
-        if [[ -n $(validate_dir_exists "$1") ]]; then
-          printf "validation error in %s:\n%s\n" "PATH" "$(validate_dir_exists "$1")"
-          exit 1
-        fi
-        args[path]=$1
-        shift
-      else
-        printf "invalid argument: %s\n" "$key"
-        exit 1
-      fi
+      printf "invalid argument: %s\n" "$key"
+      exit 1
       ;;
 
     esac
@@ -1482,6 +1634,7 @@ dotm_update_parse_requirements() {
   # :command.required_flags_filter
   # :command.catch_all_filter
   # :command.default_assignments
+  [[ -n ${args[--url]:-} ]] || args[--url]="https://raw.githubusercontent.com/LuxAter/dotm/main"
   # :command.whitelist_filter
   # :command.user_filter
 }
@@ -2046,6 +2199,8 @@ initialize() {
   set -e
 
   # src/initialize.sh
+
+  SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
   [ -t 1 ] && configure_color true
   [ -t 1 ] && configure_prompts true
