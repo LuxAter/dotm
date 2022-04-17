@@ -1,7 +1,6 @@
 #!/bin/bash
 
 section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
-PSWD=""
 
 for file in ${args[files]}; do
   file="${file//\"/}"
@@ -18,35 +17,11 @@ for file in ${args[files]}; do
       continue
     fi
 
-    action=""
-    if [ -e "$dotfile" ]; then
-      if [ -n "${args[--force]}" ]; then
-        rm -rf "$dotfile"
-      elif [ "$(fs_hash "$dotfile")" = "$(fs_hash "$sysfile")" ]; then
-        lwarn "A duplicate of this $type is already in the dotfiles"
-        continue
-      else
-        lwarn "The $type $(lscolor "$dotfile") in the dotfiles differs from $type $(lscolor "$file")"
-        action="$(fs_resolve "$dotfile" "$sysfile")"
-        if [ "$action" == "skip" ] || [ -z "$action" ]; then
-          continue
-        elif [ "$action" == "sysfile" ]; then
-          rm -rf "$dotfile"
-        fi
-      fi
-    fi
-
-    [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
-    mv "$sysfile" "$dotfile"
-
-    if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
-      rm -rf "$file"
-    elif ! [ -e "$file" ]; then
-      ln -s "$dotfile" "$file"
+    if ! link_import "$sysfile" "$dotfile" "${args[--force]}"; then
+      continue
     fi
 
     section="$(section_set "$section" "$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
-    linfo "Added the $type $(lscolor "$file") to the $(bold "${args[--package]}") package"
   elif config_has "$CONFIG_FILE" "$file"; then
     depends="$(section_get "$section" "depends" || true)"
     if [[ " $depends " = *" $file "* ]]; then

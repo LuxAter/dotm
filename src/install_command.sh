@@ -1,4 +1,19 @@
-echo "# this file is located in 'src/install_command.sh'"
-echo "# code for 'dotm install' goes here"
-echo "# you can edit it freely and regenerate (it will not be overwritten)"
-inspect_args
+#!/bin/bash
+
+section="$(config_resolve "$CONFIG_FILE" "${args[packages]}")"
+
+for key in $(section_keys "$section"); do
+  dotfile="${key#*:}"
+  dotfile="$DOTFILES/$dotfile"
+
+  sysfile="$(section_get "$section" "$key")"
+  sysfile="$(fs_expanduser "$sysfile")"
+
+  if [ -L "$sysfile" ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
+    rm -rf "$sysfile"
+  fi
+
+  if ! link_install "$dotfile" "$sysfile" "${args[--force]}"; then
+    continue
+  fi
+done

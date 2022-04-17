@@ -956,6 +956,112 @@ fs_resolve() {
   done
 }
 
+# src/lib/link.sh
+#!/bin/bash
+
+link_set() {
+  local dotfile="$1"
+  local sysfile="$2"
+  local force="$3"
+
+  [ -d "$(dirname "$sysfile")" ] || mkdir -p "$(dirname "$sysfile")"
+
+  if [ -e "$sysfile" ] && [ -z "$force" ]; then
+    if ! [ "$(fs_hash "$sysfile")" == "$(fs_hash "$dotfile")" ]; then
+      lwarn "There is a conflict etween $(lscolor "$dotfile") and $(lscolor "$sysfile")"
+      while true; do
+        action="$(pselect "How do you want to resolve the conflict" "Skip the file;Keep the original;Take the new file;Compare the files")"
+        if [ -z "$action" ] || [ "$action" == "Skip the file" ]; then
+          return 0
+        elif [ "$action" == "Keep the original" ]; then
+          rm -rf "$dotfile"
+          link_import "$sysfile" "$dotfile" "$force"
+          return $?
+        elif [ "$action" == "Take the new file" ]; then
+          break
+        elif [ "$action" == "Compare the files" ]; then
+          diff --minimal --recursive --color=auto "$sysfile" "$dotfile" 1>&2
+        fi
+      done
+    fi
+  fi
+
+  [ -e "$sysfile" ] && rm -rf "$sysfile"
+
+  # TODO: Implement support for archives and encryption
+  ln -s "$dotfile" "$sysfile"
+
+  linfo "Set the dotfile link $(lscolor "$sysfile")"
+  return 0
+}
+
+link_install() {
+  local dotfile="$1"
+  local sysfile="$2"
+  local force="$3"
+
+  [ -d "$(dirname "$sysfile")" ] || mkdir -p "$(dirname "$sysfile")"
+
+  if [ -e "$sysfile" ] && [ -z "$force" ]; then
+    if ! [ "$(fs_hash "$sysfile")" == "$(fs_hash "$dotfile")" ]; then
+      lwarn "There is a conflict etween $(lscolor "$dotfile") and $(lscolor "$sysfile")"
+      while true; do
+        action="$(pselect "How do you want to resolve the conflict" "Skip the file;Take the new file;Compare the files")"
+        if [ -z "$action" ] || [ "$action" == "Skip the file" ]; then
+          return 0
+        elif [ "$action" == "Take the new file" ]; then
+          break
+        elif [ "$action" == "Compare the files" ]; then
+          diff --minimal --recursive --color=auto "$sysfile" "$dotfile" 1>&2
+        fi
+      done
+    fi
+  fi
+
+  [ -e "$sysfile" ] && rm -rf "$sysfile"
+
+  # TODO: Implement support for archives and encryption
+  cp -r "$dotfile" "$sysfile"
+
+  linfo "Installed the dotfile to $(lscolor "$sysfile")"
+  return 0
+}
+
+link_import() {
+  local sysfile="$1"
+  local dotfile="$2"
+  local force="$3"
+
+  [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
+
+  if [ -e "$dotfile" ] && [ -z "$force" ]; then
+    if ! [ "$(fs_hash "$dotfile")" == "$(fs_hash "$sysfile")" ]; then
+      lwarn "There is a conflict between $(lscolor "$sysfile") and $(lscolor "$dotfile")"
+      while true; do
+        action="$(pselect "How do you want to resolve the conflict" "Skip the file;Keep the original;Take the new file;Compare the files")"
+        if [ -z "$action" ] || [ "$action" == "Skip the file" ]; then
+          return 0
+        elif [ "$action" == "Keep the original" ]; then
+          rm -rf "$sysfile"
+          link_set "$dotfile" "$sysfile" "$force"
+          return $?
+        elif [ "$action" == "Take the new file" ]; then
+          break
+        elif [ "$action" == "Compare the files" ]; then
+          diff --minimal --recursive --color=auto "$dotfile" "$sysfile" 1>&2
+        fi
+      done
+    fi
+  fi
+
+  [ -e "$dotfile" ] && rm -rf "$dotfile"
+
+  # TODO: Implement support for archives and encryption
+  mv "$sysfile" "$dotfile"
+  ln -s "$dotfile" "$sysfile"
+  return 0
+}
+
 # src/lib/sample_function.sh
 sample_function() {
   echo "it works"
@@ -1442,7 +1548,6 @@ dotm_add_command() {
   #!/bin/bash
 
   section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
-  PSWD=""
 
   for file in ${args[files]}; do
     file="${file//\"/}"
@@ -1459,35 +1564,11 @@ dotm_add_command() {
         continue
       fi
 
-      action=""
-      if [ -e "$dotfile" ]; then
-        if [ -n "${args[--force]}" ]; then
-          rm -rf "$dotfile"
-        elif [ "$(fs_hash "$dotfile")" = "$(fs_hash "$sysfile")" ]; then
-          lwarn "A duplicate of this $type is already in the dotfiles"
-          continue
-        else
-          lwarn "The $type $(lscolor "$dotfile") in the dotfiles differs from $type $(lscolor "$file")"
-          action="$(fs_resolve "$dotfile" "$sysfile")"
-          if [ "$action" == "skip" ] || [ -z "$action" ]; then
-            continue
-          elif [ "$action" == "sysfile" ]; then
-            rm -rf "$dotfile"
-          fi
-        fi
-      fi
-
-      [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
-      mv "$sysfile" "$dotfile"
-
-      if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
-        rm -rf "$file"
-      elif ! [ -e "$file" ]; then
-        ln -s "$dotfile" "$file"
+      if ! link_import "$sysfile" "$dotfile" "${args[--force]}"; then
+        continue
       fi
 
       section="$(section_set "$section" "$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
-      linfo "Added the $type $(lscolor "$file") to the $(bold "${args[--package]}") package"
     elif config_has "$CONFIG_FILE" "$file"; then
       depends="$(section_get "$section" "depends" || true)"
       if [[ " $depends " = *" $file "* ]]; then
@@ -1507,10 +1588,25 @@ dotm_add_command() {
 # :command.function
 dotm_install_command() {
   # src/install_command.sh
-  echo "# this file is located in 'src/install_command.sh'"
-  echo "# code for 'dotm install' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  section="$(config_resolve "$CONFIG_FILE" "${args[packages]}")"
+
+  for key in $(section_keys "$section"); do
+    dotfile="${key#*:}"
+    dotfile="$DOTFILES/$dotfile"
+
+    sysfile="$(section_get "$section" "$key")"
+    sysfile="$(fs_expanduser "$sysfile")"
+
+    if [ -L "$sysfile" ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
+      rm -rf "$sysfile"
+    fi
+
+    if ! link_install "$dotfile" "$sysfile" "${args[--force]}"; then
+      continue
+    fi
+  done
 }
 
 # :command.function
@@ -1525,10 +1621,45 @@ dotm_list_command() {
 # :command.function
 dotm_remove_command() {
   # src/remove_command.sh
-  echo "# this file is located in 'src/remove_command.sh'"
-  echo "# code for 'dotm remove' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
+  depends="$(section_get "$section" "depends" || true)"
+
+  for file in ${args[files]}; do
+    file="${file//\"/}"
+    file="$(fs_expanduser "$file")"
+
+    if [[ " $depends " = *" $file "* ]]; then
+      depends="${depends/"$file "/}"
+      section="$(section_set "$section" "depends" "$depends")"
+      linfo "Removed the dependency $(bold "$file") from the $(bold "${args[--package]}") package"
+    else
+      if [ -d "$file" ]; then type="directory"; else type="file"; fi
+
+      sysfile="$file"
+      dotfile="$(fs_dotfile "$file" "${args[--package]}")"
+
+      if ! [[ "$(realpath "$sysfile")" = "$DOTFILES/"* ]]; then
+        lwarn "The $type $(lscolor "$file") is not set in the dotfiles"
+        continue
+      fi
+
+      if ! link_install "$dotfile" "$sysfile" "${args[--force]}"; then
+        continue
+      fi
+
+      if [ -e "$dotfile" ]; then
+        rm -rf "$dotfile"
+      fi
+
+      section="$(section_del "$section" "$(fs_reldot "$dotfile")")"
+      linfo "Removed the $type $(lscolor "$file") from the $(bold "${args[--package]}") package"
+      echo ">>$section<<"
+    fi
+  done
+
+  config_set "$CONFIG_FILE" "${args[--package]}" "$section"
 }
 
 # :command.function
@@ -1537,96 +1668,45 @@ dotm_set_command() {
   #!/bin/bash
 
   section="$(config_resolve "$CONFIG_FILE" "${args[packages]}")"
-  PSWD=""
 
   for key in $(section_keys "$section"); do
-    should_extract=false
-    should_decrypt=false
-    should_copy=false
-
-    extension=""
-
-    attributes="${key%%:*}"
     dotfile="${key#*:}"
     dotfile="$DOTFILES/$dotfile"
-
-    if [[ "$attributes" = *X* ]]; then
-      should_extract=true
-      tmp="${dotfile%%"$extension"}"
-      extension="${extension}.${tmp##*.}"
-    fi
-    if [[ "$attributes" = *E* ]]; then
-      should_decrypt=true
-      tmp="${dotfile%%"$extension"}"
-      extension="${extension}.${dotfile##*.}"
-    fi
-    if [[ "$attributes" = *C* ]]; then should_copy=true; fi
 
     sysfile="$(section_get "$section" "$key")"
     sysfile="$(fs_expanduser "$sysfile")"
 
-    if [ -L "$sysfile" ] && [ "$should_copy" == false ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
+    if [ -L "$sysfile" ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
       continue
     fi
 
-    action=""
-    if [ -z "${args[--force]}" ] && [ -e "$sysfile" ]; then
-      lwarn "There is a conflict between $(lscolor "$dotfile") and $(lscolor "$sysfile")"
-      action="$(fs_resolve "$sysfile" "$dotfile")"
-      if [ "$action" == "skip" ] || [ -z "$action" ]; then
-        continue
-      elif [ "$action" == "dotfile" ]; then
-        rm -rf "$sysfile"
-      elif [ "$action" == "sysfile" ]; then
-        rm -rf "$dotfile"
-        lerror "To take the system file, run 'dotm add \"$sysfile\""
-        exit 1
-      fi
+    if ! link_set "$dotfile" "$sysfile" "${args[--force]}"; then
+      continue
     fi
-
-    [ -d "$(dirname "$sysfile")" ] || mkdir -p "$(dirname "$sysfile")"
-
-    if [ "$should_copy" == true ]; then
-      copied="$sysfile$extension"
-      sysfile="$copied"
-      cp -r "$dotfile" "$sysfile"
-
-      decrypted=""
-      if [ "$should_decrypt" == true ]; then
-        if [ -z "$PSWD" ]; then
-          PSWD="$(ppassword "Enter decryption password")"
-        fi
-        decrypted="$(fs_decrypt "$PSWD" "$sysfile")"
-        if [ $? -ne 0 ]; then
-          [ -e "$copied" ] && rm -f "$copied"
-          continue
-        fi
-        sysfile="$decrypted"
-      fi
-
-      if [ "$should_extract" == true ]; then
-        sysfile="$(fs_unarchive "$sysfile")"
-        if [ $? -ne 0 ]; then
-          [ -e "$copied" ] && rm -f "$copied"
-          [ -e "$decrypted" ] && rm -f "$decrypted"
-          continue
-        fi
-      fi
-    else
-      ln -s "$dotfile" "$sysfile"
-    fi
-
-    linfo "Set link $(lscolor "$dotfile") -> $(lscolor "$sysfile")"
   done
 }
 
 # :command.function
 dotm_unset_command() {
   # src/unset_command.sh
-  echo "# this file is located in 'src/unset_command.sh'"
-  echo "# code for 'dotm unset' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  section="$(config_resolve "$CONFIG_FILE" "${args[packages]}")"
+
+  for key in $(section_keys "$section"); do
+    dotfile="${key#*:}"
+    dotfile="$DOTFILES/$dotfile"
+
+    sysfile="$(section_get "$section" "$key")"
+    sysfile="$(fs_expanduser "$sysfile")"
+
+    if [ -L "$sysfile" ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
+      rm -rf "$sysfile"
+      linfo "Unset the dotfile link to $(lscolor "$sysfile")"
+    else
+      lwarn "The system path $(lscolor "$sysfile") is not part of the dotfiles"
+    fi
+  done
 }
 
 # :command.function
