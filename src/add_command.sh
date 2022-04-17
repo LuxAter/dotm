@@ -3,7 +3,7 @@
 section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
 PSWD=""
 
-for file in ${args[FILE]}; do
+for file in ${args[files]}; do
   file="${file//\"/}"
   file="$(fs_expanduser "$file")"
 
@@ -36,30 +36,28 @@ for file in ${args[FILE]}; do
       fi
     fi
 
-    attributes=""
     should_copy=false
     should_archive=false
     should_encrypt=false
     if [ -n "${args[--copy]}" ]; then
       should_copy=true
-      attributes="${attributes}C"
     fi
     if [ -n "${args[--archive]}" ]; then
       should_archive=true
       should_copy=true
-      attributes="${attributes}X"
     fi
     if [ -n "${args[--encrypt]}" ]; then
       should_encrypt=true
       should_copy=true
-      attributes="${attributes}E"
       if [ -d "$sysfile" ]; then
         should_archive=true
       fi
     fi
 
+    attributes=""
     archived=""
     if [ "$should_archive" == true ]; then
+      attributes="${attributes}X"
       archived="$(fs_archive "$sysfile")"
       if [ $? -ne 0 ]; then
         continue
@@ -69,6 +67,7 @@ for file in ${args[FILE]}; do
 
     encrypted=""
     if [ "$should_encrypt" == true ]; then
+      attributes="${attributes}E"
       if [ -z "$PSWD" ]; then
         PSWD="$(ppassword "Enter encryption password")"
       fi
@@ -80,10 +79,12 @@ for file in ${args[FILE]}; do
       sysfile="$encrypted"
     fi
 
+    [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
     if [ "$should_copy" == true ]; then
+      attributes="${attributes}C"
       cp -r "$sysfile" "$dotfile"
     else
-      mv -r "$sysfile" "$dotfile"
+      mv "$sysfile" "$dotfile"
 
       if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
         rm -rf "$file"

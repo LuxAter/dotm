@@ -37,15 +37,15 @@ config_set() {
   [ -d "$(dirname "$file")" ] || mkdir -p "$(dirname "$file")"
 
   local found=false
-  local copy=false
+  local copy=true
   local output=""
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^\[(.+)\]$ ]]; then
       if [ "${BASH_REMATCH[1]}" == "$key" ]; then
         found=true
         copy=false
-        output="${output}[$key]\n$body"
-      elif [ "$found" == true ]; then
+        output="${output}[$key]\n$body\n"
+      else
         output="$output$line\n"
         copy=true
       fi
@@ -187,4 +187,21 @@ section_keys() {
 ##   if section_has "$section" "key"; then
 section_has() {
   [[ " $(section_keys "$1")" = *" $2 "* ]]
+}
+
+## Get all key/value pairs for the dependency graph of a config section
+## Usage:
+##   section="$(config_resolve "file" "root_section")"
+config_resolve() {
+  local file="$1"
+  local key="$2"
+  local visited="$3"
+  local section="$(config_get "$1" "$2" || true)"
+  [ -z "$section" ] && return 0
+
+  if section_has "$section" "depends"; then
+    while IFS=' ' read -r dep; do
+      echo "HI: $dep"
+    done < <(section_get "$section" "depends")
+  fi
 }

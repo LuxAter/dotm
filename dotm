@@ -627,15 +627,15 @@ config_set() {
   [ -d "$(dirname "$file")" ] || mkdir -p "$(dirname "$file")"
 
   local found=false
-  local copy=false
+  local copy=true
   local output=""
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^\[(.+)\]$ ]]; then
       if [ "${BASH_REMATCH[1]}" == "$key" ]; then
         found=true
         copy=false
-        output="${output}[$key]\n$body"
-      elif [ "$found" == true ]; then
+        output="${output}[$key]\n$body\n"
+      else
         output="$output$line\n"
         copy=true
       fi
@@ -753,6 +753,20 @@ section_keys() {
 
 section_has() {
   [[ " $(section_keys "$1")" = *" $2 "* ]]
+}
+
+config_resolve() {
+  local file="$1"
+  local key="$2"
+  local visited="$3"
+  local section="$(config_get "$1" "$2" || true)"
+  [ -z "$section" ] && return 0
+
+  if section_has "$section" "depends"; then
+    while IFS=' ' read -r dep; do
+      echo "HI: $dep"
+    done < <(section_get "$section" "depends")
+  fi
 }
 
 # src/lib/fs.sh
@@ -1424,7 +1438,7 @@ dotm_add_command() {
   section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
   PSWD=""
 
-  for file in ${args[FILE]}; do
+  for file in ${args[files]}; do
     file="${file//\"/}"
     file="$(fs_expanduser "$file")"
 
@@ -1457,30 +1471,28 @@ dotm_add_command() {
         fi
       fi
 
-      attributes=""
       should_copy=false
       should_archive=false
       should_encrypt=false
       if [ -n "${args[--copy]}" ]; then
         should_copy=true
-        attributes="${attributes}C"
       fi
       if [ -n "${args[--archive]}" ]; then
         should_archive=true
         should_copy=true
-        attributes="${attributes}X"
       fi
       if [ -n "${args[--encrypt]}" ]; then
         should_encrypt=true
         should_copy=true
-        attributes="${attributes}E"
         if [ -d "$sysfile" ]; then
           should_archive=true
         fi
       fi
 
+      attributes=""
       archived=""
       if [ "$should_archive" == true ]; then
+        attributes="${attributes}X"
         archived="$(fs_archive "$sysfile")"
         if [ $? -ne 0 ]; then
           continue
@@ -1490,6 +1502,7 @@ dotm_add_command() {
 
       encrypted=""
       if [ "$should_encrypt" == true ]; then
+        attributes="${attributes}E"
         if [ -z "$PSWD" ]; then
           PSWD="$(ppassword "Enter encryption password")"
         fi
@@ -1501,10 +1514,12 @@ dotm_add_command() {
         sysfile="$encrypted"
       fi
 
+      [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
       if [ "$should_copy" == true ]; then
+        attributes="${attributes}C"
         cp -r "$sysfile" "$dotfile"
       else
-        mv -r "$sysfile" "$dotfile"
+        mv "$sysfile" "$dotfile"
 
         if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
           rm -rf "$file"
@@ -1566,10 +1581,9 @@ dotm_remove_command() {
 # :command.function
 dotm_set_command() {
   # src/set_command.sh
-  echo "# this file is located in 'src/set_command.sh'"
-  echo "# code for 'dotm set' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  config_resolve "$CONFIG_FILE" "${args[--package]}"
 }
 
 # :command.function
@@ -2518,7 +2532,7 @@ dotm_sync_parse_requirements() {
 
 # :command.initialize
 initialize() {
-  version="0.1.0"
+  version="0.1.5"
   long_usage=''
   set -e
 

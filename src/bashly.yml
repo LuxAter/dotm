@@ -1,6 +1,6 @@
 name: dotm
 help: Personal dotfiles manager utility
-version: 0.1.0
+version: 0.1.5
 
 environment_variables:
   - name: DOTFILES
