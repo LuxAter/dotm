@@ -758,6 +758,35 @@ section_has() {
 # src/lib/fs.sh
 #!/bin/bash
 
+fs_expanduser() {
+  echo "${1/"~"/$HOME}"
+}
+
+fs_reluser() {
+  echo "${1/$HOME/"~"}"
+}
+
+fs_reldot() {
+  echo "${1/$DOTFILES\//}"
+}
+
+fs_dotfile() {
+  local rel="$(fs_reluser "$1")"
+  local pkg="$2"
+  local fname="$(basename "$rel")"
+  rel="${rel#"~/"}"
+  rel="${rel#"/"}"
+  fname="${fname#.}"
+
+  local res=""
+  if [ -n "$pkg" ]; then
+    res="$DOTFILES/$(dirname "$rel")/$pkg.$fname"
+  else
+    res="$DOTFILES/$(dirname "$rel")/$fname"
+  fi
+  echo "${res/\/.\//\/}"
+}
+
 fs_hash() {
   if [ -f "$1" ]; then
     openssl md5 "$1" | cut -d' ' -f2
@@ -767,7 +796,6 @@ fs_hash() {
     echo "d41d8cd98f00b204e9800998ecf8427e"
   fi
 }
-
 
 fs_archive() {
   local src="$1"
@@ -886,6 +914,26 @@ fs_decrypt() {
   fi
   echo "$dest"
   return 0
+}
+
+fs_resolve() {
+  while true; do
+    action="$(pselect "How do you want to resolve the conflict" "Keep the dotfile version;Keep the system version;Compare the two for differences;Skip it")"
+    if [ -z "$action" ]; then
+      return 0
+    elif [ "$action" == "Keep the dotfile version" ]; then
+      echo "dotfile"
+      return 0
+    elif [ "$action" == "Keep the system version" ]; then
+      echo "sysfile"
+      return 0
+    elif [ "$action" == "Compare the two for differences" ]; then
+      diff --minimal --recursive --color=auto "$1" "$2" 1>&2
+    elif [ "$action" == "Skip it" ]; then
+      echo "skip"
+      return 0
+    fi
+  done
 }
 
 # src/lib/sample_function.sh
@@ -1371,10 +1419,121 @@ dotm_update_command() {
 # :command.function
 dotm_add_command() {
   # src/add_command.sh
-  echo "# this file is located in 'src/add_command.sh'"
-  echo "# code for 'dotm add' goes here"
-  echo "# you can edit it freely and regenerate (it will not be overwritten)"
-  inspect_args
+  #!/bin/bash
+
+  section="$(config_get "$CONFIG_FILE" "${args[--package]}" || true)"
+  PSWD=""
+
+  for file in ${args[FILE]}; do
+    file="${file//\"/}"
+    file="$(fs_expanduser "$file")"
+
+    if [ -e "$file" ]; then
+      if [ -d "$file" ]; then type="directory"; else type="file"; fi
+
+      sysfile="$(realpath "$file")"
+      dotfile="$(fs_dotfile "$file" "${args[--package]}")"
+
+      if [[ "$sysfile" = "$DOTFILES/"* ]]; then
+        lwarn "The $type $(lscolor "$file") is already tracked in the dotfiles, it will be skipped"
+        continue
+      fi
+
+      action=""
+      if [ -e "$dotfile" ]; then
+        if [ -n "${args[--force]}" ]; then
+          rm -rf "$dotfile"
+        elif [ "$(fs_hash "$dotfile")" = "$(fs_hash "$sysfile")" ]; then
+          lwarn "A duplicate of this $type is already in the dotfiles"
+          continue
+        else
+          lwarn "The $type $(lscolor "$dotfile") in the dotfiles differs from $type $(lscolor "$file")"
+          action="$(fs_resolve "$dotfile" "$sysfile")"
+          if [ "$action" == "skip" ] || [ -z "$action" ]; then
+            continue
+          elif [ "$action" == "sysfile" ]; then
+            rm -rf "$dotfile"
+          fi
+        fi
+      fi
+
+      attributes=""
+      should_copy=false
+      should_archive=false
+      should_encrypt=false
+      if [ -n "${args[--copy]}" ]; then
+        should_copy=true
+        attributes="${attributes}C"
+      fi
+      if [ -n "${args[--archive]}" ]; then
+        should_archive=true
+        should_copy=true
+        attributes="${attributes}X"
+      fi
+      if [ -n "${args[--encrypt]}" ]; then
+        should_encrypt=true
+        should_copy=true
+        attributes="${attributes}E"
+        if [ -d "$sysfile" ]; then
+          should_archive=true
+        fi
+      fi
+
+      archived=""
+      if [ "$should_archive" == true ]; then
+        archived="$(fs_archive "$sysfile")"
+        if [ $? -ne 0 ]; then
+          continue
+        fi
+        sysfile="$archived"
+      fi
+
+      encrypted=""
+      if [ "$should_encrypt" == true ]; then
+        if [ -z "$PSWD" ]; then
+          PSWD="$(ppassword "Enter encryption password")"
+        fi
+        encrypted="$(fs_encrypt "$PSWD" "$sysfile")"
+        if [ $? -ne 0 ]; then
+          [ -e "$archived" ] && rm -f "$archived"
+          continue
+        fi
+        sysfile="$encrypted"
+      fi
+
+      if [ "$should_copy" == true ]; then
+        cp -r "$sysfile" "$dotfile"
+      else
+        mv -r "$sysfile" "$dotfile"
+
+        if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
+          rm -rf "$file"
+        elif ! [ -e "$file" ]; then
+          ln -s "$dotfile" "$file"
+        fi
+      fi
+
+      [ -e "$encrypted" ] && rm -f "$encrypted"
+      [ -e "$archived" ] && rm -f "$archived"
+
+      if [ -n "$attributes" ]; then attributes="${attributes}:"; fi
+
+      section="$(section_set "$section" "${attributes}$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
+      linfo "Added the $type $(lscolor "$file") to the $(bold "${args[--package]}") package"
+    elif config_has "$CONFIG_FILE" "$file"; then
+      depends="$(section_get "$section" "depends" || true)"
+      if [[ " $depends " = *" $file "* ]]; then
+        lwarn "Package $(bold "$file") is already a dependency of $(bold "${args[--package]}")"
+      else
+        section="$(section_set "$section" "depends" "$depends $file")"
+        linfo "Added $(bold "$file") as a dependency of $(bold "${args[--package]}")"
+      fi
+    else
+      lwarn "File or directory $(lscolor "$file") does not exist, it will be skipped"
+    fi
+  done
+
+  config_set "$CONFIG_FILE" "${args[--package]}" "$section"
 }
 
 # :command.function
@@ -2364,8 +2523,10 @@ initialize() {
   set -e
 
   # src/initialize.sh
+  #!/bin/bash
 
   SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+  CONFIG_FILE="$DOTFILES/dot.ini"
 
   [ -t 1 ] && configure_color true
   [ -t 1 ] && configure_prompts true

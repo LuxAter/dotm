@@ -1,5 +1,46 @@
 #!/bin/bash
 
+## Expand the user component of a given path
+## Usage:
+##   path="$(fs_expanduser "path")"
+fs_expanduser() {
+  echo "${1/"~"/$HOME}"
+}
+
+## Get the relative path to the user home directory
+## Usage:
+##   path="$(fs_reluser "path")"
+fs_reluser() {
+  echo "${1/$HOME/"~"}"
+}
+
+## Get the path relative to the dotfiles dir
+## Usage:
+##  path="$(fs_reldot "path")"
+fs_reldot() {
+  echo "${1/$DOTFILES\//}"
+}
+
+## Get the dotfile equivalent of the path
+## Usage:
+##   path="$(fs_dotfile "path" "pkg")"
+fs_dotfile() {
+  local rel="$(fs_reluser "$1")"
+  local pkg="$2"
+  local fname="$(basename "$rel")"
+  rel="${rel#"~/"}"
+  rel="${rel#"/"}"
+  fname="${fname#.}"
+
+  local res=""
+  if [ -n "$pkg" ]; then
+    res="$DOTFILES/$(dirname "$rel")/$pkg.$fname"
+  else
+    res="$DOTFILES/$(dirname "$rel")/$fname"
+  fi
+  echo "${res/\/.\//\/}"
+}
+
 ## Get the md5 hash of a given file or directory
 ## Usage:
 ##   hash="$(fs_hash "source_file.txt")"
@@ -14,7 +55,7 @@ fs_hash() {
 }
 
 ## Archive/compress a given file or directory into the destination path
-## Usage: 
+## Usage:
 ##   dest_file="$(fs_archive "source_file.txt")"
 ##   fs_archive "source_file.txt" "dest_file.tgz"
 fs_archive() {
@@ -146,4 +187,27 @@ fs_decrypt() {
   fi
   echo "$dest"
   return 0
+}
+
+## Prompt user for resolution in a file/directory conflict
+## Usage:
+##   result="$(fs_resolve "path_a" "path_b")"
+fs_resolve() {
+  while true; do
+    action="$(pselect "How do you want to resolve the conflict" "Keep the dotfile version;Keep the system version;Compare the two for differences;Skip it")"
+    if [ -z "$action" ]; then
+      return 0
+    elif [ "$action" == "Keep the dotfile version" ]; then
+      echo "dotfile"
+      return 0
+    elif [ "$action" == "Keep the system version" ]; then
+      echo "sysfile"
+      return 0
+    elif [ "$action" == "Compare the two for differences" ]; then
+      diff --minimal --recursive --color=auto "$1" "$2" 1>&2
+    elif [ "$action" == "Skip it" ]; then
+      echo "skip"
+      return 0
+    fi
+  done
 }
