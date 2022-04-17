@@ -36,69 +36,16 @@ for file in ${args[files]}; do
       fi
     fi
 
-    should_copy=false
-    should_archive=false
-    should_encrypt=false
-    if [ -n "${args[--copy]}" ]; then
-      should_copy=true
-    fi
-    if [ -n "${args[--archive]}" ]; then
-      should_archive=true
-      should_copy=true
-    fi
-    if [ -n "${args[--encrypt]}" ]; then
-      should_encrypt=true
-      should_copy=true
-      if [ -d "$sysfile" ]; then
-        should_archive=true
-      fi
-    fi
-
-    attributes=""
-    archived=""
-    if [ "$should_archive" == true ]; then
-      attributes="${attributes}X"
-      archived="$(fs_archive "$sysfile")"
-      if [ $? -ne 0 ]; then
-        continue
-      fi
-      sysfile="$archived"
-    fi
-
-    encrypted=""
-    if [ "$should_encrypt" == true ]; then
-      attributes="${attributes}E"
-      if [ -z "$PSWD" ]; then
-        PSWD="$(ppassword "Enter encryption password")"
-      fi
-      encrypted="$(fs_encrypt "$PSWD" "$sysfile")"
-      if [ $? -ne 0 ]; then
-        [ -e "$archived" ] && rm -f "$archived"
-        continue
-      fi
-      sysfile="$encrypted"
-    fi
-
     [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
-    if [ "$should_copy" == true ]; then
-      attributes="${attributes}C"
-      cp -r "$sysfile" "$dotfile"
-    else
-      mv "$sysfile" "$dotfile"
+    mv "$sysfile" "$dotfile"
 
-      if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
-        rm -rf "$file"
-      elif ! [ -e "$file" ]; then
-        ln -s "$dotfile" "$file"
-      fi
+    if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
+      rm -rf "$file"
+    elif ! [ -e "$file" ]; then
+      ln -s "$dotfile" "$file"
     fi
 
-    [ -e "$encrypted" ] && rm -f "$encrypted"
-    [ -e "$archived" ] && rm -f "$archived"
-
-    if [ -n "$attributes" ]; then attributes="${attributes}:"; fi
-
-    section="$(section_set "$section" "${attributes}$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
+    section="$(section_set "$section" "$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
     linfo "Added the $type $(lscolor "$file") to the $(bold "${args[--package]}") package"
   elif config_has "$CONFIG_FILE" "$file"; then
     depends="$(section_get "$section" "depends" || true)"

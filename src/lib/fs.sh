@@ -4,7 +4,8 @@
 ## Usage:
 ##   path="$(fs_expanduser "path")"
 fs_expanduser() {
-  echo "${1/"~"/$HOME}"
+  local path="${1/"~"/$HOME}"
+  echo "${path/"./"/"$PWD/"}"
 }
 
 ## Get the relative path to the user home directory
@@ -30,6 +31,8 @@ fs_dotfile() {
   local fname="$(basename "$rel")"
   rel="${rel#"~/"}"
   rel="${rel#"/"}"
+  rel="${rel//\/\//\/}"
+  rel="${rel///./\/}"
   fname="${fname#.}"
 
   local res=""
@@ -38,7 +41,7 @@ fs_dotfile() {
   else
     res="$DOTFILES/$(dirname "$rel")/$fname"
   fi
-  echo "${res/\/.\//\/}"
+  echo "${res//\/.\//\/}"
 }
 
 ## Get the md5 hash of a given file or directory

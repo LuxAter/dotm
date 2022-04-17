@@ -35,6 +35,7 @@ config_set() {
   local body="$3"
 
   [ -d "$(dirname "$file")" ] || mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || touch "$file"
 
   local found=false
   local copy=true
@@ -105,7 +106,7 @@ config_keys() {
 ## Usage:
 ##   if config_has "file" "key"; then
 config_has() {
-  [[ " $(config_keys "$1")" = *" $2 "* ]]
+  [[ " $(config_keys "$1") " = *" $2 "* ]]
 }
 
 ## Get value from the config section
@@ -133,7 +134,7 @@ section_get() {
 section_set() {
   local section="$1"
   local key="$2"
-  local value="$3"
+  local value="${3# }"
 
   local found=false
   local output=""
@@ -191,17 +192,34 @@ section_has() {
 
 ## Get all key/value pairs for the dependency graph of a config section
 ## Usage:
-##   section="$(config_resolve "file" "root_section")"
+##   section="$(config_resolve "file" "section1 section2")"
 config_resolve() {
   local file="$1"
-  local key="$2"
+  local sections=($2)
   local visited="$3"
-  local section="$(config_get "$1" "$2" || true)"
-  [ -z "$section" ] && return 0
 
-  if section_has "$section" "depends"; then
-    while IFS=' ' read -r dep; do
-      echo "HI: $dep"
-    done < <(section_get "$section" "depends")
-  fi
+  local body=""
+  for sec in "${sections[@]}"; do
+    sec="${sec//\"/}"
+    if [[ " $visited " = *" $sec "* ]]; then
+      lwarn "Found cyclical dependency with $(bold "$sec")"
+      continue
+    else
+      visited="$visited $sec"
+    fi
+
+    if ! config_has "$file" "$sec"; then continue; fi
+    local section="$(config_get "$file" "$sec")"
+    if [ -z "$section" ]; then continue; fi
+
+    for key in $(section_keys "$section"); do
+      if [ "$key" == "depends" ]; then
+        body="$body$(config_resolve "$file" "$(section_get "$section" "depends")" "$visited")\n"
+      else
+        body="$body$key=$(section_get "$section" "$key")\n"
+      fi
+    done
+  done
+
+  printf '%b' "$body"
 }

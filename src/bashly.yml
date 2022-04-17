@@ -67,15 +67,6 @@ commands:
         arg: PACKAGE
         default: host/$HOSTNAME
         help: Package to add the new dotfiles into
-      - long: --encrypt
-        short: -e
-        help: Encrypt the dotfile in the repository
-      - long: --copy
-        short: -c
-        help: Copy the dotfile instead of using symlinks
-      - long: --archive
-        short: -a
-        help: Archive the dotfile in the repository
 
   - name: install
     short: i

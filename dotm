@@ -199,21 +199,6 @@ dotm_add_usage() {
     printf "    Package to add the new dotfiles into\n"
     printf "    Default: host/$HOSTNAME\n"
     echo
-
-    # :flag.usage
-    echo "  --encrypt, -e"
-    printf "    Encrypt the dotfile in the repository\n"
-    echo
-
-    # :flag.usage
-    echo "  --copy, -c"
-    printf "    Copy the dotfile instead of using symlinks\n"
-    echo
-
-    # :flag.usage
-    echo "  --archive, -a"
-    printf "    Archive the dotfile in the repository\n"
-    echo
     # :command.usage_args
     printf "Arguments:\n"
 
@@ -625,6 +610,7 @@ config_set() {
   local body="$3"
 
   [ -d "$(dirname "$file")" ] || mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || touch "$file"
 
   local found=false
   local copy=true
@@ -686,7 +672,7 @@ config_keys() {
 }
 
 config_has() {
-  [[ " $(config_keys "$1")" = *" $2 "* ]]
+  [[ " $(config_keys "$1") " = *" $2 "* ]]
 }
 
 section_get() {
@@ -708,7 +694,7 @@ section_get() {
 section_set() {
   local section="$1"
   local key="$2"
-  local value="$3"
+  local value="${3# }"
 
   local found=false
   local output=""
@@ -757,23 +743,41 @@ section_has() {
 
 config_resolve() {
   local file="$1"
-  local key="$2"
+  local sections=($2)
   local visited="$3"
-  local section="$(config_get "$1" "$2" || true)"
-  [ -z "$section" ] && return 0
 
-  if section_has "$section" "depends"; then
-    while IFS=' ' read -r dep; do
-      echo "HI: $dep"
-    done < <(section_get "$section" "depends")
-  fi
+  local body=""
+  for sec in "${sections[@]}"; do
+    sec="${sec//\"/}"
+    if [[ " $visited " = *" $sec "* ]]; then
+      lwarn "Found cyclical dependency with $(bold "$sec")"
+      continue
+    else
+      visited="$visited $sec"
+    fi
+
+    if ! config_has "$file" "$sec"; then continue; fi
+    local section="$(config_get "$file" "$sec")"
+    if [ -z "$section" ]; then continue; fi
+
+    for key in $(section_keys "$section"); do
+      if [ "$key" == "depends" ]; then
+        body="$body$(config_resolve "$file" "$(section_get "$section" "depends")" "$visited")\n"
+      else
+        body="$body$key=$(section_get "$section" "$key")\n"
+      fi
+    done
+  done
+
+  printf '%b' "$body"
 }
 
 # src/lib/fs.sh
 #!/bin/bash
 
 fs_expanduser() {
-  echo "${1/"~"/$HOME}"
+  local path="${1/"~"/$HOME}"
+  echo "${path/"./"/"$PWD/"}"
 }
 
 fs_reluser() {
@@ -790,6 +794,8 @@ fs_dotfile() {
   local fname="$(basename "$rel")"
   rel="${rel#"~/"}"
   rel="${rel#"/"}"
+  rel="${rel//\/\//\/}"
+  rel="${rel///./\/}"
   fname="${fname#.}"
 
   local res=""
@@ -798,7 +804,7 @@ fs_dotfile() {
   else
     res="$DOTFILES/$(dirname "$rel")/$fname"
   fi
-  echo "${res/\/.\//\/}"
+  echo "${res//\/.\//\/}"
 }
 
 fs_hash() {
@@ -1025,7 +1031,7 @@ send_completions() {
   echo $'    \'pull\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
   echo $'    \'push\'*) COMPREPLY=($(compgen -W "--help --message -h -m" -- "$cur")) ;;'
   echo $'    \'sync\'*) COMPREPLY=($(compgen -W "--help --max-frequnecy --message -f -h -m" -- "$cur")) ;;'
-  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--archive --copy --encrypt --force --help --package -a -c -e -f -h -p" -- "$cur")) ;;'
+  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;'
   echo $'    \'set\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'\'*) COMPREPLY=($(compgen -W "--help --version -h -v add completions install list pull push remove set sync unset update" -- "$cur")) ;;'
   echo $'  esac'
@@ -1471,69 +1477,16 @@ dotm_add_command() {
         fi
       fi
 
-      should_copy=false
-      should_archive=false
-      should_encrypt=false
-      if [ -n "${args[--copy]}" ]; then
-        should_copy=true
-      fi
-      if [ -n "${args[--archive]}" ]; then
-        should_archive=true
-        should_copy=true
-      fi
-      if [ -n "${args[--encrypt]}" ]; then
-        should_encrypt=true
-        should_copy=true
-        if [ -d "$sysfile" ]; then
-          should_archive=true
-        fi
-      fi
-
-      attributes=""
-      archived=""
-      if [ "$should_archive" == true ]; then
-        attributes="${attributes}X"
-        archived="$(fs_archive "$sysfile")"
-        if [ $? -ne 0 ]; then
-          continue
-        fi
-        sysfile="$archived"
-      fi
-
-      encrypted=""
-      if [ "$should_encrypt" == true ]; then
-        attributes="${attributes}E"
-        if [ -z "$PSWD" ]; then
-          PSWD="$(ppassword "Enter encryption password")"
-        fi
-        encrypted="$(fs_encrypt "$PSWD" "$sysfile")"
-        if [ $? -ne 0 ]; then
-          [ -e "$archived" ] && rm -f "$archived"
-          continue
-        fi
-        sysfile="$encrypted"
-      fi
-
       [ -d "$(dirname "$dotfile")" ] || mkdir -p "$(dirname "$dotfile")"
-      if [ "$should_copy" == true ]; then
-        attributes="${attributes}C"
-        cp -r "$sysfile" "$dotfile"
-      else
-        mv "$sysfile" "$dotfile"
+      mv "$sysfile" "$dotfile"
 
-        if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
-          rm -rf "$file"
-        elif ! [ -e "$file" ]; then
-          ln -s "$dotfile" "$file"
-        fi
+      if [ -e "$file" ] && [ "$action" == "dotfile" ]; then
+        rm -rf "$file"
+      elif ! [ -e "$file" ]; then
+        ln -s "$dotfile" "$file"
       fi
 
-      [ -e "$encrypted" ] && rm -f "$encrypted"
-      [ -e "$archived" ] && rm -f "$archived"
-
-      if [ -n "$attributes" ]; then attributes="${attributes}:"; fi
-
-      section="$(section_set "$section" "${attributes}$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
+      section="$(section_set "$section" "$(fs_reldot "$dotfile")" "$(fs_reluser "$file")")"
       linfo "Added the $type $(lscolor "$file") to the $(bold "${args[--package]}") package"
     elif config_has "$CONFIG_FILE" "$file"; then
       depends="$(section_get "$section" "depends" || true)"
@@ -1583,7 +1536,88 @@ dotm_set_command() {
   # src/set_command.sh
   #!/bin/bash
 
-  config_resolve "$CONFIG_FILE" "${args[--package]}"
+  section="$(config_resolve "$CONFIG_FILE" "${args[packages]}")"
+  PSWD=""
+
+  for key in $(section_keys "$section"); do
+    should_extract=false
+    should_decrypt=false
+    should_copy=false
+
+    extension=""
+
+    attributes="${key%%:*}"
+    dotfile="${key#*:}"
+    dotfile="$DOTFILES/$dotfile"
+
+    if [[ "$attributes" = *X* ]]; then
+      should_extract=true
+      tmp="${dotfile%%"$extension"}"
+      extension="${extension}.${tmp##*.}"
+    fi
+    if [[ "$attributes" = *E* ]]; then
+      should_decrypt=true
+      tmp="${dotfile%%"$extension"}"
+      extension="${extension}.${dotfile##*.}"
+    fi
+    if [[ "$attributes" = *C* ]]; then should_copy=true; fi
+
+    sysfile="$(section_get "$section" "$key")"
+    sysfile="$(fs_expanduser "$sysfile")"
+
+    if [ -L "$sysfile" ] && [ "$should_copy" == false ] && [ "$(realpath "$sysfile")" == "$dotfile" ]; then
+      continue
+    fi
+
+    action=""
+    if [ -z "${args[--force]}" ] && [ -e "$sysfile" ]; then
+      lwarn "There is a conflict between $(lscolor "$dotfile") and $(lscolor "$sysfile")"
+      action="$(fs_resolve "$sysfile" "$dotfile")"
+      if [ "$action" == "skip" ] || [ -z "$action" ]; then
+        continue
+      elif [ "$action" == "dotfile" ]; then
+        rm -rf "$sysfile"
+      elif [ "$action" == "sysfile" ]; then
+        rm -rf "$dotfile"
+        lerror "To take the system file, run 'dotm add \"$sysfile\""
+        exit 1
+      fi
+    fi
+
+    [ -d "$(dirname "$sysfile")" ] || mkdir -p "$(dirname "$sysfile")"
+
+    if [ "$should_copy" == true ]; then
+      copied="$sysfile$extension"
+      sysfile="$copied"
+      cp -r "$dotfile" "$sysfile"
+
+      decrypted=""
+      if [ "$should_decrypt" == true ]; then
+        if [ -z "$PSWD" ]; then
+          PSWD="$(ppassword "Enter decryption password")"
+        fi
+        decrypted="$(fs_decrypt "$PSWD" "$sysfile")"
+        if [ $? -ne 0 ]; then
+          [ -e "$copied" ] && rm -f "$copied"
+          continue
+        fi
+        sysfile="$decrypted"
+      fi
+
+      if [ "$should_extract" == true ]; then
+        sysfile="$(fs_unarchive "$sysfile")"
+        if [ $? -ne 0 ]; then
+          [ -e "$copied" ] && rm -f "$copied"
+          [ -e "$decrypted" ] && rm -f "$decrypted"
+          continue
+        fi
+      fi
+    else
+      ln -s "$dotfile" "$sysfile"
+    fi
+
+    linfo "Set link $(lscolor "$dotfile") -> $(lscolor "$sysfile")"
+  done
 }
 
 # :command.function
@@ -2015,27 +2049,6 @@ dotm_add_parse_requirements() {
         printf "%s\n" "--package requires an argument: --package, -p PACKAGE"
         exit 1
       fi
-      ;;
-
-    # :flag.case
-    --encrypt | -e )
-      # :flag.conflicts
-      args[--encrypt]=1
-      shift
-      ;;
-
-    # :flag.case
-    --copy | -c )
-      # :flag.conflicts
-      args[--copy]=1
-      shift
-      ;;
-
-    # :flag.case
-    --archive | -a )
-      # :flag.conflicts
-      args[--archive]=1
-      shift
       ;;
 
     -?* )

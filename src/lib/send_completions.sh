@@ -19,7 +19,7 @@ send_completions() {
   echo $'    \'pull\'*) COMPREPLY=($(compgen -W "--help -h" -- "$cur")) ;;'
   echo $'    \'push\'*) COMPREPLY=($(compgen -W "--help --message -h -m" -- "$cur")) ;;'
   echo $'    \'sync\'*) COMPREPLY=($(compgen -W "--help --max-frequnecy --message -f -h -m" -- "$cur")) ;;'
-  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--archive --copy --encrypt --force --help --package -a -c -e -f -h -p" -- "$cur")) ;;'
+  echo $'    \'add\'*) COMPREPLY=($(compgen -W "--force --help --package -f -h -p" -- "$cur")) ;;'
   echo $'    \'set\'*) COMPREPLY=($(compgen -W "--force --help -f -h" -- "$cur")) ;;'
   echo $'    \'\'*) COMPREPLY=($(compgen -W "--help --version -h -v add completions install list pull push remove set sync unset update" -- "$cur")) ;;'
   echo $'  esac'
