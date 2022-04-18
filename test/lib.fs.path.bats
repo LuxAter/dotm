@@ -49,6 +49,13 @@ setup() {
 
   run fs_dotfile "/etc/zshrc" "zsh"
   assert_output "/home/user/.dotfile/etc/zsh.zshrc"
+
+  run fs_dotfile "/home/user/.config/starship.toml" "starship"
+  assert_output "/home/user/.dotfile/config/starship.starship.toml"
+
+  run fs_dotfile "/home/user/Documents/.config/config.ini" "pkg"
+  assert_output "/home/user/.dotfile/Documents/config/pkg.config.ini"
+
 }
 
 # vim:ft=sh

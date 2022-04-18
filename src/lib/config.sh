@@ -69,6 +69,9 @@ config_del() {
   local file="$1"
   local key="$2"
 
+  [ -d "$(dirname "$file")" ] || mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || touch "$file"
+
   local output=""
   local copy=true
   while IFS= read -r line || [ -n "$line" ]; do
@@ -93,6 +96,9 @@ config_del() {
 config_keys() {
   local file="$1"
   local keys=()
+
+  [ -f "$file" ] || return 0
+
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^\[([A-Za-z0-9\/]+)\]$ ]]; then
       keys+=("${BASH_REMATCH[1]}")

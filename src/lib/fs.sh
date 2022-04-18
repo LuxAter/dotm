@@ -32,7 +32,8 @@ fs_dotfile() {
   rel="${rel#"~/"}"
   rel="${rel#"/"}"
   rel="${rel//\/\//\/}"
-  rel="${rel///./\/}"
+  rel="${rel//\/./\/}"
+  rel="${rel#.}"
   fname="${fname#.}"
 
   local res=""
