@@ -65,7 +65,7 @@ dotm_usage() {
     # :environment_variable.usage
     echo "  DOTFILES (required)"
     printf "    Path to the local dotfiles repository\n"
-    printf "    Default: $HOME/dotfiles.new\n"
+    printf "    Default: $HOME/.dotfiles\n"
     echo
 
   fi
@@ -1835,7 +1835,7 @@ parse_requirements() {
 
   esac
   # :command.environment_variables_filter
-  export DOTFILES="${DOTFILES:-$HOME/dotfiles.new}"
+  export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
   if [[ -z "${DOTFILES:-}" ]]; then
     printf "missing required environment variable: DOTFILES\n"
     exit 1
@@ -2656,7 +2656,7 @@ dotm_sync_parse_requirements() {
 
 # :command.initialize
 initialize() {
-  version="0.2.0"
+  version="0.2.1"
   long_usage=''
   set -e
 
@@ -2664,7 +2664,7 @@ initialize() {
   #!/bin/bash
 
   SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-  CONFIG_FILE="$DOTFILES/dot.ini"
+  CONFIG_FILE="${DOTFILES:-$HOME/.dotfiles}/dot.ini"
 
   [ -t 1 ] && configure_color true
   [ -t 1 ] && configure_prompts true

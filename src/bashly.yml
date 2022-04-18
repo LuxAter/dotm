@@ -1,11 +1,11 @@
 name: dotm
 help: Personal dotfiles manager utility
-version: 0.2.0
+version: 0.2.1
 
 environment_variables:
   - name: DOTFILES
     required: true
-    default: $HOME/dotfiles.new
+    default: $HOME/.dotfiles
     help: Path to the local dotfiles repository
 
 commands:
